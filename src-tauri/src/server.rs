@@ -28,7 +28,7 @@ use crate::telemetry::{RequestLog, RequestStatus};
 use crate::websocket::{WsConfig, WsConnectionManager, WsStats};
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -716,6 +716,9 @@ async fn run_server(
         None
     };
 
+    // 设置请求体大小限制为 100MB，支持大型上下文请求（如 Claude Code 的 /compact 命令）
+    let body_limit = 100 * 1024 * 1024; // 100MB
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/models", get(models))
@@ -735,6 +738,7 @@ async fn run_server(
             "/:selector/v1/chat/completions",
             post(chat_completions_with_selector),
         )
+        .layer(DefaultBodyLimit::max(body_limit))
         .with_state(state);
 
     let addr: std::net::SocketAddr = format!("{host}:{port}").parse()?;
@@ -754,7 +758,7 @@ async fn run_server(
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "healthy",
-        "version": "0.10.0"
+        "version": "0.10.1"
     }))
 }
 
