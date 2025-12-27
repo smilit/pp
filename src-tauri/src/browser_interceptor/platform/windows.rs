@@ -160,31 +160,31 @@ echo URL被拦截: %1 >> "{}\proxycast_intercepted_urls.log"
     /// 设置我们的程序为默认浏览器
     async fn set_as_default_browser(&self) -> Result<()> {
         if let Some(exe_path) = &self.temp_exe_path {
-            unsafe {
-                // 注册我们的程序为HTTP处理器
-                let prog_id = "ProxyCastInterceptor";
-                let key_path = format!(r"Software\Classes\{}", prog_id);
+            // 注册我们的程序为HTTP处理器
+            let prog_id = "ProxyCastInterceptor";
+            let key_path = format!(r"Software\Classes\{}", prog_id);
 
-                self.set_registry_string(&key_path, "", "ProxyCast Browser Interceptor")
-                    .await?;
+            self.set_registry_string(&key_path, "", "ProxyCast Browser Interceptor")
+                .await?;
 
-                let command_path = format!(r"{}\shell\open\command", key_path);
-                let command_value = format!(r#"{} "%1""#, exe_path);
-                self.set_registry_string(&command_path, "", &command_value)
-                    .await?;
+            let command_path = format!(r"{}\shell\open\command", key_path);
+            let command_value = format!(r#"{} "%1""#, exe_path);
+            self.set_registry_string(&command_path, "", &command_value)
+                .await?;
 
-                // 设置为HTTP协议的默认处理器
-                let http_key = r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice";
-                self.set_registry_string(http_key, "ProgId", prog_id)
-                    .await?;
+            // 设置为HTTP协议的默认处理器
+            let http_key =
+                r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice";
+            self.set_registry_string(http_key, "ProgId", prog_id)
+                .await?;
 
-                // 设置为HTTPS协议的默认处理器
-                let https_key = r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice";
-                self.set_registry_string(https_key, "ProgId", prog_id)
-                    .await?;
+            // 设置为HTTPS协议的默认处理器
+            let https_key =
+                r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice";
+            self.set_registry_string(https_key, "ProgId", prog_id)
+                .await?;
 
-                tracing::info!("已设置 ProxyCast 为临时默认浏览器");
-            }
+            tracing::info!("已设置 ProxyCast 为临时默认浏览器");
         }
 
         Ok(())
@@ -217,13 +217,17 @@ echo URL被拦截: %1 >> "{}\proxycast_intercepted_urls.log"
                 let value_name_wide = to_wide_chars(value_name);
                 let value_data_wide = to_wide_chars(value_data);
 
+                let data_bytes = std::slice::from_raw_parts(
+                    value_data_wide.as_ptr() as *const u8,
+                    value_data_wide.len() * 2,
+                );
+
                 RegSetValueExW(
                     key,
                     PCWSTR::from_raw(value_name_wide.as_ptr()),
                     0,
                     REG_SZ,
-                    Some(value_data_wide.as_ptr() as *const u8),
-                    value_data_wide.len() * 2,
+                    Some(data_bytes),
                 );
 
                 RegCloseKey(key);
@@ -326,7 +330,7 @@ echo URL被拦截: %1 >> "{}\proxycast_intercepted_urls.log"
 
     /// 临时禁用拦截
     pub async fn temporarily_disable(&mut self) -> Result<()> {
-        if let Some(original_browser) = &self.original_browser {
+        if let Some(_original_browser) = &self.original_browser {
             self.restore_default_browser().await?;
             tracing::info!("拦截器已临时禁用");
         }
