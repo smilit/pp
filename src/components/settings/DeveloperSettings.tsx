@@ -38,9 +38,9 @@ export function DeveloperSettings() {
           <div className="mt-4 p-3 bg-muted/50 rounded-md text-sm text-muted-foreground">
             <p className="font-medium text-foreground mb-2">使用说明:</p>
             <ul className="list-disc list-inside space-y-1">
-              <li>所有标记的组件会显示蓝色虚线轮廓</li>
-              <li>鼠标悬浮时轮廓高亮显示</li>
-              <li>按住 Alt 键点击组件可查看名称和文件路径</li>
+              <li>按住 Alt 键 + 鼠标悬浮显示组件轮廓</li>
+              <li>Alt + 点击组件可查看名称和文件路径</li>
+              <li>文件路径仅在开发模式 (npm run tauri dev) 下可用</li>
             </ul>
           </div>
         )}

@@ -26,11 +26,38 @@ function getReactFiberInfo(element: HTMLElement): Partial<ComponentInfo> | null 
     if (type && typeof type === "function") {
       const name = type.displayName || type.name || "Anonymous";
       if (!name.startsWith("_") && name !== "Anonymous") {
-        let filePath = "未知路径";
+        // 尝试多种方式获取文件路径
+        let filePath = "";
+        
+        // 方式1: _debugSource (开发模式)
         if (fiber._debugSource) {
-          filePath = `${fiber._debugSource.fileName}:${fiber._debugSource.lineNumber}`;
-        } else if (type._source) {
-          filePath = `${type._source.fileName}:${type._source.lineNumber}`;
+          const source = fiber._debugSource;
+          filePath = source.fileName || "";
+          if (source.lineNumber) {
+            filePath += `:${source.lineNumber}`;
+          }
+        }
+        // 方式2: type._source
+        else if (type._source) {
+          const source = type._source;
+          filePath = source.fileName || "";
+          if (source.lineNumber) {
+            filePath += `:${source.lineNumber}`;
+          }
+        }
+        // 方式3: 尝试从函数的 toString 中提取（某些打包器会保留）
+        else if (type.toString) {
+          const funcStr = type.toString();
+          // 检查是否有 sourceURL 注释
+          const sourceMatch = funcStr.match(/\/\/# sourceURL=(.+)/);
+          if (sourceMatch) {
+            filePath = sourceMatch[1];
+          }
+        }
+
+        // 如果还是没有路径，显示提示信息
+        if (!filePath) {
+          filePath = "仅开发模式可用 (需要 React DevTools)";
         }
 
         const props = fiber.memoizedProps || {};
