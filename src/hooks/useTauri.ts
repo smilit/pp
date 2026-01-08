@@ -1,4 +1,19 @@
-import { invoke } from "@tauri-apps/api/core";
+// Safe Tauri invoke wrapper for web mode compatibility
+const safeInvoke = async (cmd: string, args?: any): Promise<any> => {
+  // Check if Tauri is available
+  if (typeof window !== "undefined" && (window as any).__TAURI__) {
+    return (window as any).__TAURI__.invoke(cmd, args);
+  }
+
+  // Try to use real Tauri API
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke(cmd, args);
+  } catch (e) {
+    console.error(`[useTauri] Failed to invoke ${cmd}:`, e);
+    throw new Error(`Tauri API not available. Command: ${cmd}`);
+  }
+};
 
 export interface ServerStatus {
   running: boolean;
@@ -148,6 +163,8 @@ export interface Config {
   proxy_url: string | null;
   /** 关闭时最小化到托盘（而不是退出应用） */
   minimize_to_tray: boolean;
+  /** 用户界面语言 ("zh" 或 "en") */
+  language: string;
 }
 
 export interface LogEntry {
@@ -157,44 +174,44 @@ export interface LogEntry {
 }
 
 export async function startServer(): Promise<string> {
-  return invoke("start_server");
+  return safeInvoke("start_server");
 }
 
 export async function stopServer(): Promise<string> {
-  return invoke("stop_server");
+  return safeInvoke("stop_server");
 }
 
 export async function getServerStatus(): Promise<ServerStatus> {
-  return invoke("get_server_status");
+  return safeInvoke("get_server_status");
 }
 
 export async function getConfig(): Promise<Config> {
-  return invoke("get_config");
+  return safeInvoke("get_config");
 }
 
 export async function saveConfig(config: Config): Promise<void> {
-  return invoke("save_config", { config });
+  return safeInvoke("save_config", { config });
 }
 
 export async function getDefaultProvider(): Promise<string> {
-  return invoke("get_default_provider");
+  return safeInvoke("get_default_provider");
 }
 
 export async function setDefaultProvider(provider: string): Promise<string> {
-  return invoke("set_default_provider", { provider });
+  return safeInvoke("set_default_provider", { provider });
 }
 
 export async function refreshKiroToken(): Promise<string> {
-  return invoke("refresh_kiro_token");
+  return safeInvoke("refresh_kiro_token");
 }
 
 export async function reloadCredentials(): Promise<string> {
-  return invoke("reload_credentials");
+  return safeInvoke("reload_credentials");
 }
 
 export async function getLogs(): Promise<LogEntry[]> {
   try {
-    return await invoke("get_logs");
+    return await safeInvoke("get_logs");
   } catch {
     return [];
   }
@@ -202,7 +219,7 @@ export async function getLogs(): Promise<LogEntry[]> {
 
 export async function clearLogs(): Promise<void> {
   try {
-    await invoke("clear_logs");
+    await safeInvoke("clear_logs");
   } catch {
     // ignore
   }
@@ -221,7 +238,7 @@ export async function testApi(
   body: string | null,
   auth: boolean,
 ): Promise<TestResult> {
-  return invoke("test_api", { method, path, body, auth });
+  return safeInvoke("test_api", { method, path, body, auth });
 }
 
 export interface KiroCredentialStatus {
@@ -235,7 +252,7 @@ export interface KiroCredentialStatus {
 }
 
 export async function getKiroCredentials(): Promise<KiroCredentialStatus> {
-  return invoke("get_kiro_credentials");
+  return safeInvoke("get_kiro_credentials");
 }
 
 export interface EnvVariable {
@@ -245,11 +262,11 @@ export interface EnvVariable {
 }
 
 export async function getEnvVariables(): Promise<EnvVariable[]> {
-  return invoke("get_env_variables");
+  return safeInvoke("get_env_variables");
 }
 
 export async function getTokenFileHash(): Promise<string> {
-  return invoke("get_token_file_hash");
+  return safeInvoke("get_token_file_hash");
 }
 
 export interface CheckResult {
@@ -261,7 +278,7 @@ export interface CheckResult {
 export async function checkAndReloadCredentials(
   lastHash: string,
 ): Promise<CheckResult> {
-  return invoke("check_and_reload_credentials", { last_hash: lastHash });
+  return safeInvoke("check_and_reload_credentials", { last_hash: lastHash });
 }
 
 // ============ Gemini Provider ============
@@ -276,29 +293,31 @@ export interface GeminiCredentialStatus {
 }
 
 export async function getGeminiCredentials(): Promise<GeminiCredentialStatus> {
-  return invoke("get_gemini_credentials");
+  return safeInvoke("get_gemini_credentials");
 }
 
 export async function reloadGeminiCredentials(): Promise<string> {
-  return invoke("reload_gemini_credentials");
+  return safeInvoke("reload_gemini_credentials");
 }
 
 export async function refreshGeminiToken(): Promise<string> {
-  return invoke("refresh_gemini_token");
+  return safeInvoke("refresh_gemini_token");
 }
 
 export async function getGeminiEnvVariables(): Promise<EnvVariable[]> {
-  return invoke("get_gemini_env_variables");
+  return safeInvoke("get_gemini_env_variables");
 }
 
 export async function getGeminiTokenFileHash(): Promise<string> {
-  return invoke("get_gemini_token_file_hash");
+  return safeInvoke("get_gemini_token_file_hash");
 }
 
 export async function checkAndReloadGeminiCredentials(
   lastHash: string,
 ): Promise<CheckResult> {
-  return invoke("check_and_reload_gemini_credentials", { last_hash: lastHash });
+  return safeInvoke("check_and_reload_gemini_credentials", {
+    last_hash: lastHash,
+  });
 }
 
 // ============ Qwen Provider ============
@@ -313,29 +332,31 @@ export interface QwenCredentialStatus {
 }
 
 export async function getQwenCredentials(): Promise<QwenCredentialStatus> {
-  return invoke("get_qwen_credentials");
+  return safeInvoke("get_qwen_credentials");
 }
 
 export async function reloadQwenCredentials(): Promise<string> {
-  return invoke("reload_qwen_credentials");
+  return safeInvoke("reload_qwen_credentials");
 }
 
 export async function refreshQwenToken(): Promise<string> {
-  return invoke("refresh_qwen_token");
+  return safeInvoke("refresh_qwen_token");
 }
 
 export async function getQwenEnvVariables(): Promise<EnvVariable[]> {
-  return invoke("get_qwen_env_variables");
+  return safeInvoke("get_qwen_env_variables");
 }
 
 export async function getQwenTokenFileHash(): Promise<string> {
-  return invoke("get_qwen_token_file_hash");
+  return safeInvoke("get_qwen_token_file_hash");
 }
 
 export async function checkAndReloadQwenCredentials(
   lastHash: string,
 ): Promise<CheckResult> {
-  return invoke("check_and_reload_qwen_credentials", { last_hash: lastHash });
+  return safeInvoke("check_and_reload_qwen_credentials", {
+    last_hash: lastHash,
+  });
 }
 
 // ============ OpenAI Custom Provider ============
@@ -347,7 +368,7 @@ export interface OpenAICustomStatus {
 }
 
 export async function getOpenAICustomStatus(): Promise<OpenAICustomStatus> {
-  return invoke("get_openai_custom_status");
+  return safeInvoke("get_openai_custom_status");
 }
 
 export async function setOpenAICustomConfig(
@@ -355,7 +376,7 @@ export async function setOpenAICustomConfig(
   baseUrl: string | null,
   enabled: boolean,
 ): Promise<string> {
-  return invoke("set_openai_custom_config", {
+  return safeInvoke("set_openai_custom_config", {
     api_key: apiKey,
     base_url: baseUrl,
     enabled,
@@ -371,7 +392,7 @@ export interface ClaudeCustomStatus {
 }
 
 export async function getClaudeCustomStatus(): Promise<ClaudeCustomStatus> {
-  return invoke("get_claude_custom_status");
+  return safeInvoke("get_claude_custom_status");
 }
 
 export async function setClaudeCustomConfig(
@@ -379,7 +400,7 @@ export async function setClaudeCustomConfig(
   baseUrl: string | null,
   enabled: boolean,
 ): Promise<string> {
-  return invoke("set_claude_custom_config", {
+  return safeInvoke("set_claude_custom_config", {
     api_key: apiKey,
     base_url: baseUrl,
     enabled,
@@ -395,7 +416,7 @@ export interface ModelInfo {
 }
 
 export async function getAvailableModels(): Promise<ModelInfo[]> {
-  return invoke("get_available_models");
+  return safeInvoke("get_available_models");
 }
 
 // ============ API Compatibility Check ============
@@ -420,7 +441,7 @@ export interface ApiCompatibilityResult {
 export async function checkApiCompatibility(
   provider: string,
 ): Promise<ApiCompatibilityResult> {
-  return invoke("check_api_compatibility", { provider });
+  return safeInvoke("check_api_compatibility", { provider });
 }
 
 // ============ Endpoint Provider Configuration ============
@@ -449,7 +470,7 @@ export interface EndpointProvidersConfig {
  * @returns 端点 Provider 配置对象
  */
 export async function getEndpointProviders(): Promise<EndpointProvidersConfig> {
-  return invoke("get_endpoint_providers");
+  return safeInvoke("get_endpoint_providers");
 }
 
 /**
@@ -462,7 +483,10 @@ export async function setEndpointProvider(
   clientType: string,
   provider: string | null,
 ): Promise<string> {
-  return invoke("set_endpoint_provider", { endpoint: clientType, provider });
+  return safeInvoke("set_endpoint_provider", {
+    endpoint: clientType,
+    provider,
+  });
 }
 
 // Network Info
@@ -476,5 +500,5 @@ export interface NetworkInfo {
  * @returns 本地和内网 IP 地址
  */
 export async function getNetworkInfo(): Promise<NetworkInfo> {
-  return invoke("get_network_info");
+  return safeInvoke("get_network_info");
 }

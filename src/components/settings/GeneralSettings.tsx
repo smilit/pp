@@ -7,6 +7,8 @@ import { Moon, Sun, Monitor, RefreshCw, Info, RotateCcw } from "lucide-react";
 import { cn, validateProxyUrl } from "@/lib/utils";
 import { getConfig, saveConfig, Config } from "@/hooks/useTauri";
 import { useOnboardingState } from "@/components/onboarding";
+import { LanguageSelector, Language } from "./LanguageSelector";
+import { useI18nPatch } from "@/i18n/I18nPatchProvider";
 
 type Theme = "light" | "dark" | "system";
 
@@ -14,7 +16,9 @@ export function GeneralSettings() {
   const [theme, setTheme] = useState<Theme>("system");
   const [launchOnStartup, setLaunchOnStartup] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
+  const [language, setLanguageState] = useState<Language>("zh");
   const { resetOnboarding } = useOnboardingState();
+  const { setLanguage: setI18nLanguage } = useI18nPatch();
 
   // 重新运行引导
   const handleResetOnboarding = useCallback(() => {
@@ -48,6 +52,7 @@ export function GeneralSettings() {
       setConfig(c);
       setProxyUrl(c.proxy_url || "");
       setMinimizeToTray(c.minimize_to_tray ?? true);
+      setLanguageState((c.language || "zh") as Language);
     } catch (e) {
       console.error("加载配置失败:", e);
     } finally {
@@ -97,6 +102,20 @@ export function GeneralSettings() {
       setProxyMessage({ type: "error", text: `保存失败: ${errorMessage}` });
     } finally {
       setProxySaving(false);
+    }
+  };
+
+  const handleLanguageChange = async (newLanguage: Language) => {
+    if (!config) return;
+    try {
+      const newConfig = { ...config, language: newLanguage };
+      await saveConfig(newConfig);
+      setConfig(newConfig);
+      setLanguageState(newLanguage);
+      // Update i18n context to trigger DOM replacement
+      setI18nLanguage(newLanguage);
+    } catch (err) {
+      console.error("保存语言设置失败:", err);
     }
   };
 
@@ -184,6 +203,17 @@ export function GeneralSettings() {
               </button>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* 语言 */}
+      <div className="rounded-lg border p-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">语言</h3>
+          <LanguageSelector
+            currentLanguage={language}
+            onLanguageChange={handleLanguageChange}
+          />
         </div>
       </div>
 

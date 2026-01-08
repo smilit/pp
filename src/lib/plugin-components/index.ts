@@ -240,3 +240,22 @@ export type {
 // Usage API
 export { usageApi } from "@/lib/api/usage";
 export type { UsageInfo } from "@/lib/api/usage";
+
+// Machine ID API
+export { machineIdApi, machineIdUtils } from "@/lib/api/machineId";
+export type {
+  MachineIdFormat,
+  MachineIdInfo,
+  MachineIdResult,
+  AdminStatus as MachineIdAdminStatus,
+  MachineIdValidation,
+  MachineIdHistory,
+  SystemInfo as MachineIdSystemInfo,
+  PlatformSupport,
+} from "@/lib/api/machineId";
+
+// Label 组件
+export { Label } from "@/components/ui/label";
+
+// Toaster 组件
+export { Toaster } from "@/components/ui/sonner";

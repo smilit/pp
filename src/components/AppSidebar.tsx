@@ -22,6 +22,7 @@ import {
   Moon,
   Sun,
   Activity,
+  Terminal,
   LucideIcon,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
@@ -34,6 +35,7 @@ type Page =
   | "tools"
   | "plugins"
   | "settings"
+  | "terminal"
   | `plugin:${string}`;
 
 interface AppSidebarProps {
@@ -130,6 +132,7 @@ const mainMenuItems: { id: Page; label: string; icon: typeof Bot }[] = [
   { id: "agent", label: "AI Agent", icon: Bot },
   { id: "api-server", label: "API Server", icon: Globe },
   { id: "provider-pool", label: "凭证池", icon: Database },
+  { id: "terminal", label: "终端", icon: Terminal },
   { id: "tools", label: "工具", icon: Wrench },
   { id: "plugins", label: "插件中心", icon: Puzzle },
 ];

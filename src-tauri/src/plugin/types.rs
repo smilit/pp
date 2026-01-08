@@ -213,7 +213,7 @@ pub struct BinaryManifest {
 /// _需求: 5.2, 5.3_
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiManifest {
-    /// UI 展示位置 (如 "main", "settings", "sidebar")
+    /// UI 展示位置 (如 "main", "settings", "sidebar", "tools")
     #[serde(default)]
     pub surfaces: Vec<String>,
     /// 图标名称 (使用 Lucide 图标名)
@@ -222,6 +222,12 @@ pub struct UiManifest {
     /// 窗口标题
     #[serde(default)]
     pub title: Option<String>,
+    /// 嵌入式 UI 入口文件路径 (相对于插件目录，如 "dist/index.js")
+    #[serde(default)]
+    pub entry: Option<String>,
+    /// UI 描述
+    #[serde(default)]
+    pub description: Option<String>,
     /// 窗口默认宽度
     #[serde(default)]
     pub default_width: Option<u32>,
@@ -587,18 +593,24 @@ mod tests {
             prop::collection::vec("[a-z]{1,10}", 0..3),
             proptest::option::of("[a-z-]{1,20}"),
             proptest::option::of("[a-zA-Z0-9 ]{1,30}"),
+            proptest::option::of("[a-z/]{1,30}"),
+            proptest::option::of("[a-zA-Z0-9 ]{1,50}"),
             proptest::option::of(100u32..2000u32),
             proptest::option::of(100u32..2000u32),
         )
-            .prop_map(|(surfaces, icon, title, default_width, default_height)| {
-                UiManifest {
-                    surfaces,
-                    icon,
-                    title,
-                    default_width,
-                    default_height,
-                }
-            })
+            .prop_map(
+                |(surfaces, icon, title, entry, description, default_width, default_height)| {
+                    UiManifest {
+                        surfaces,
+                        icon,
+                        title,
+                        entry,
+                        description,
+                        default_width,
+                        default_height,
+                    }
+                },
+            )
     }
 
     /// 生成随机的 PluginType
@@ -688,6 +700,8 @@ mod tests {
             surfaces: vec!["main".to_string(), "settings".to_string()],
             icon: Some("puzzle".to_string()),
             title: Some("Test Plugin".to_string()),
+            entry: None,
+            description: None,
             default_width: Some(800),
             default_height: Some(600),
         };
@@ -732,6 +746,8 @@ mod tests {
                 surfaces: vec!["main".to_string()],
                 icon: Some("puzzle".to_string()),
                 title: None,
+                entry: None,
+                description: None,
                 default_width: None,
                 default_height: None,
             }),

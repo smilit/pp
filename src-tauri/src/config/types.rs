@@ -311,6 +311,9 @@ pub struct Config {
     /// 关闭时最小化到托盘（而不是退出应用）
     #[serde(default = "default_minimize_to_tray")]
     pub minimize_to_tray: bool,
+    /// 用户界面语言 ("zh" 或 "en")
+    #[serde(default = "default_language")]
+    pub language: String,
     /// 模型配置（动态加载 Provider 和模型列表）
     #[serde(default)]
     pub models: ModelsConfig,
@@ -414,6 +417,10 @@ impl NativeAgentConfig {
 
 fn default_minimize_to_tray() -> bool {
     true
+}
+
+fn default_language() -> String {
+    "zh".to_string()
 }
 
 /// 服务器配置

@@ -19,7 +19,6 @@ import {
   Globe,
   Activity,
   FileCode,
-  Terminal,
 } from "lucide-react";
 import { PluginInstallDialog } from "./PluginInstallDialog";
 import { PluginUninstallDialog } from "./PluginUninstallDialog";
@@ -106,14 +105,6 @@ interface RecommendedPlugin {
  * 推荐插件列表
  */
 const recommendedPlugins: RecommendedPlugin[] = [
-  {
-    id: "terminal-plugin",
-    name: "终端",
-    description: "本地 PTY 和 SSH 终端模拟器，支持多标签页和搜索功能",
-    icon: Terminal,
-    downloadUrl:
-      "https://github.com/aiclientproxy/terminal/releases/latest/download/terminal-plugin.zip",
-  },
   {
     id: "machine-id-tool",
     name: "机器码管理工具",
@@ -521,9 +512,11 @@ function PluginItem({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-medium">{plugin.name}</span>
-              <span className="text-xs text-muted-foreground">
-                v{plugin.version}
-              </span>
+              {plugin.version && (
+                <Badge variant="secondary" className="text-xs">
+                  v{plugin.version}
+                </Badge>
+              )}
               <span className="flex items-center gap-1 text-xs">
                 {getStatusIcon(plugin.status)}
                 {getStatusText(plugin.status)}
@@ -655,9 +648,11 @@ function InstalledPluginItem({
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span className="font-medium">{plugin.name}</span>
-            <span className="text-xs text-muted-foreground">
-              v{plugin.version}
-            </span>
+            {plugin.version && (
+              <Badge variant="secondary" className="text-xs">
+                v{plugin.version}
+              </Badge>
+            )}
             {plugin.enabled ? (
               <span className="flex items-center gap-1 text-xs text-green-600">
                 <CheckCircle className="h-3 w-3" />

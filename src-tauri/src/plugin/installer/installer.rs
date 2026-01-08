@@ -69,6 +69,7 @@ impl PluginInstaller {
     /// 从本地文件安装插件
     ///
     /// 流程: 验证 → 解压 → 注册 → 复制文件
+    /// 如果插件已存在，会先清理旧版本数据再安装新版本
     /// _需求: 1.1, 1.2, 1.3_
     pub async fn install_from_file(
         &self,
@@ -83,9 +84,10 @@ impl PluginInstaller {
         progress.on_progress(InstallProgress::validating("验证清单文件..."));
         let manifest = self.validator.extract_and_validate_manifest(path, format)?;
 
-        // 检查插件是否已存在
+        // 检查插件是否已存在，如果存在则先清理旧版本
         if self.registry.exists(&manifest.name)? {
-            return Err(InstallError::AlreadyExists(manifest.name.clone()));
+            progress.on_progress(InstallProgress::installing(0, "清理旧版本..."));
+            self.cleanup_old_version(&manifest.name)?;
         }
 
         // 阶段 3: 解压到临时目录
@@ -126,6 +128,7 @@ impl PluginInstaller {
     /// 从 URL 安装插件
     ///
     /// 流程: 下载 → 验证 → 解压 → 注册 → 复制文件
+    /// 如果插件已存在，会先清理旧版本数据再安装新版本
     /// _需求: 2.1, 2.2_
     pub async fn install_from_url(
         &self,
@@ -151,11 +154,10 @@ impl PluginInstaller {
             .validator
             .extract_and_validate_manifest(&download_path, format)?;
 
-        // 检查插件是否已存在
+        // 检查插件是否已存在，如果存在则先清理旧版本
         if self.registry.exists(&manifest.name)? {
-            // 清理下载文件
-            let _ = fs::remove_file(&download_path);
-            return Err(InstallError::AlreadyExists(manifest.name.clone()));
+            progress.on_progress(InstallProgress::installing(0, "清理旧版本..."));
+            self.cleanup_old_version(&manifest.name)?;
         }
 
         // 阶段 4: 解压到临时目录
@@ -208,7 +210,7 @@ impl PluginInstaller {
 
     /// 卸载插件
     ///
-    /// 流程: 删除文件 → 注销注册表
+    /// 流程: 删除文件 → 清理数据目录 → 注销注册表
     /// _需求: 4.2_
     pub async fn uninstall(&self, plugin_id: &str) -> Result<(), InstallError> {
         // 获取插件信息
@@ -222,8 +224,69 @@ impl PluginInstaller {
             fs::remove_dir_all(&plugin.install_path)?;
         }
 
+        // 清理插件数据目录（在 Application Support 下的独立目录）
+        self.cleanup_plugin_data_dirs(plugin_id);
+
         // 注销注册表
         self.registry.unregister(plugin_id)?;
+
+        Ok(())
+    }
+
+    /// 清理插件在 Application Support 下的数据目录
+    ///
+    /// 插件可能在以下位置创建数据：
+    /// - ~/Library/Application Support/{plugin-id}
+    /// - ~/Library/Caches/{plugin-id}
+    /// - ~/Library/WebKit/{plugin-id}
+    fn cleanup_plugin_data_dirs(&self, plugin_id: &str) {
+        // 获取用户数据目录
+        if let Some(data_dir) = dirs::data_dir() {
+            // ~/Library/Application Support/{plugin-id}
+            let plugin_data_dir = data_dir.join(plugin_id);
+            if plugin_data_dir.exists() {
+                let _ = fs::remove_dir_all(&plugin_data_dir);
+            }
+        }
+
+        // 获取缓存目录
+        if let Some(cache_dir) = dirs::cache_dir() {
+            // ~/Library/Caches/{plugin-id}
+            let plugin_cache_dir = cache_dir.join(plugin_id);
+            if plugin_cache_dir.exists() {
+                let _ = fs::remove_dir_all(&plugin_cache_dir);
+            }
+        }
+
+        // 清理 WebKit 数据目录（macOS 特有）
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(home_dir) = dirs::home_dir() {
+                let webkit_dir = home_dir.join("Library").join("WebKit").join(plugin_id);
+                if webkit_dir.exists() {
+                    let _ = fs::remove_dir_all(&webkit_dir);
+                }
+            }
+        }
+    }
+
+    /// 清理旧版本插件（用于更新安装）
+    ///
+    /// 删除旧版本的插件文件、数据目录和注册表记录
+    fn cleanup_old_version(&self, plugin_id: &str) -> Result<(), InstallError> {
+        // 获取旧插件信息
+        if let Some(old_plugin) = self.registry.get(plugin_id)? {
+            // 删除旧插件文件
+            if old_plugin.install_path.exists() {
+                fs::remove_dir_all(&old_plugin.install_path)?;
+            }
+        }
+
+        // 清理插件数据目录
+        self.cleanup_plugin_data_dirs(plugin_id);
+
+        // 注销旧的注册表记录
+        let _ = self.registry.unregister(plugin_id);
 
         Ok(())
     }
@@ -564,25 +627,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_install_from_file_already_exists() {
-        let (installer, _plugins_dir, temp_dir, _db_dir) = create_test_installer();
-        let package_path = create_test_plugin_zip(temp_dir.path(), "duplicate-plugin", "1.0.0");
+    async fn test_install_from_file_update_existing() {
+        let (installer, plugins_dir, temp_dir, _db_dir) = create_test_installer();
+        let package_path_v1 = create_test_plugin_zip(temp_dir.path(), "update-plugin", "1.0.0");
 
         let progress = NoopProgressCallback;
 
-        // 第一次安装
-        let result1 = installer.install_from_file(&package_path, &progress).await;
+        // 第一次安装 v1.0.0
+        let result1 = installer
+            .install_from_file(&package_path_v1, &progress)
+            .await;
         assert!(result1.is_ok());
+        assert_eq!(result1.unwrap().version, "1.0.0");
 
-        // 第二次安装应该失败
-        let result2 = installer.install_from_file(&package_path, &progress).await;
-        assert!(result2.is_err());
-        match result2.unwrap_err() {
-            InstallError::AlreadyExists(name) => {
-                assert_eq!(name, "duplicate-plugin");
-            }
-            e => panic!("期望 AlreadyExists 错误，实际: {:?}", e),
-        }
+        // 创建新版本
+        let package_path_v2 = create_test_plugin_zip(temp_dir.path(), "update-plugin", "2.0.0");
+
+        // 第二次安装应该成功（覆盖更新）
+        let result2 = installer
+            .install_from_file(&package_path_v2, &progress)
+            .await;
+        assert!(result2.is_ok(), "更新安装应该成功: {:?}", result2);
+
+        let updated = result2.unwrap();
+        assert_eq!(updated.name, "update-plugin");
+        assert_eq!(updated.version, "2.0.0");
+
+        // 验证只有一个插件
+        let plugins = installer.list_installed().unwrap();
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].version, "2.0.0");
+
+        // 验证文件存在
+        let plugin_dir = plugins_dir.path().join("update-plugin");
+        assert!(plugin_dir.exists(), "插件目录应该存在");
     }
 
     #[tokio::test]

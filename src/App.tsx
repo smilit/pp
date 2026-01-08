@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import styled from "styled-components";
+import { withI18nPatch } from "./i18n/withI18nPatch";
 import { SplashScreen } from "./components/SplashScreen";
 import { AppSidebar } from "./components/AppSidebar";
 import { SettingsPage } from "./components/settings";
@@ -19,6 +20,7 @@ import { ToolsPage } from "./components/tools/ToolsPage";
 import { AgentChatPage } from "./components/agent";
 import { PluginUIRenderer } from "./components/plugins/PluginUIRenderer";
 import { PluginsPage } from "./components/plugins/PluginsPage";
+import { TerminalPage } from "./components/terminal/TerminalPage";
 import { flowEventManager } from "./lib/flowEventManager";
 import { OnboardingWizard, useOnboardingState } from "./components/onboarding";
 import { ConnectConfirmDialog } from "./components/connect";
@@ -44,6 +46,7 @@ type Page =
   | "tools"
   | "plugins"
   | "settings"
+  | "terminal"
   | `plugin:${string}`;
 
 const AppContainer = styled.div`
@@ -56,9 +59,10 @@ const AppContainer = styled.div`
 
 const MainContent = styled.main`
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 `;
 
 const PageWrapper = styled.div`
@@ -73,12 +77,14 @@ const PageWrapper = styled.div`
  */
 const FullscreenWrapper = styled.div`
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative;
 `;
 
-function App() {
+function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
   const [currentPage, setCurrentPage] = useState<Page>("agent");
   const { needsOnboarding, completeOnboarding } = useOnboardingState();
@@ -182,6 +188,13 @@ function App() {
         return (
           <AgentChatPage onNavigate={(page) => setCurrentPage(page as Page)} />
         );
+      case "terminal":
+        // 终端页面需要全屏显示
+        return (
+          <FullscreenWrapper>
+            <TerminalPage />
+          </FullscreenWrapper>
+        );
       case "tools":
         return (
           <PageWrapper>
@@ -256,4 +269,6 @@ function App() {
   );
 }
 
+// Export the App component wrapped with i18n patch support
+const App = withI18nPatch(AppContent);
 export default App;

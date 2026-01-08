@@ -11,7 +11,7 @@
 
 #![allow(dead_code)]
 
-use crate::plugin::{PluginConfig, PluginInfo, PluginManager, PluginManifest};
+use crate::plugin::{PluginConfig, PluginInfo, PluginManager, PluginManifest, PluginType};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -186,18 +186,23 @@ fn read_plugin_manifest(install_path: &Path) -> Option<PluginManifest> {
 /// 获取带有 UI 配置的已安装插件列表
 ///
 /// 从已安装插件中筛选带有 UI 配置的插件，返回 PluginUIInfo 列表
+/// 同时扫描插件目录中未注册但存在的插件
 /// _需求: 3.1, 3.3_
 #[tauri::command]
 pub async fn get_plugins_with_ui(
     installer_state: tauri::State<'_, PluginInstallerState>,
+    plugin_manager_state: tauri::State<'_, PluginManagerState>,
 ) -> Result<Vec<PluginUIInfo>, String> {
     let installer = installer_state.0.read().await;
+    let manager = plugin_manager_state.0.read().await;
 
-    // 获取所有已安装插件
+    // 获取所有已安装插件（从数据库）
     let installed_plugins = installer.list_installed().map_err(|e| e.to_string())?;
+    let mut registered_ids: std::collections::HashSet<String> =
+        installed_plugins.iter().map(|p| p.id.clone()).collect();
 
-    // 筛选带有 UI 配置的插件
-    let ui_plugins: Vec<PluginUIInfo> = installed_plugins
+    // 筛选带有 UI 配置的已注册插件
+    let mut ui_plugins: Vec<PluginUIInfo> = installed_plugins
         .into_iter()
         .filter_map(|plugin| {
             // 读取插件的 manifest 文件
@@ -220,6 +225,43 @@ pub async fn get_plugins_with_ui(
             })
         })
         .collect();
+
+    // 扫描插件目录中未注册的插件
+    let plugins_dir = manager.plugins_dir();
+    if let Ok(entries) = std::fs::read_dir(plugins_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let plugin_id = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|s| s.to_string());
+
+                if let Some(id) = plugin_id {
+                    // 跳过已注册的插件
+                    if registered_ids.contains(&id) {
+                        continue;
+                    }
+
+                    // 尝试读取 manifest
+                    if let Some(manifest) = read_plugin_manifest(&path) {
+                        if let Some(ui_config) = manifest.ui {
+                            if !ui_config.surfaces.is_empty() {
+                                ui_plugins.push(PluginUIInfo {
+                                    plugin_id: id.clone(),
+                                    name: manifest.name,
+                                    description: manifest.description,
+                                    icon: ui_config.icon.unwrap_or_else(|| "puzzle".to_string()),
+                                    surfaces: ui_config.surfaces,
+                                });
+                                registered_ids.insert(id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Ok(ui_plugins)
 }
@@ -265,4 +307,61 @@ pub async fn handle_plugin_action(
         .handle_plugin_action(&plugin_id, action)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// 读取插件清单文件
+///
+/// 从插件目录读取 plugin.json 文件
+/// 用于检查插件是否存在于文件系统中（即使未在数据库中注册）
+#[tauri::command]
+pub async fn read_plugin_manifest_cmd(
+    state: tauri::State<'_, PluginManagerState>,
+    plugin_id: String,
+) -> Result<Option<PluginManifest>, String> {
+    let manager = state.0.read().await;
+    let plugins_dir = manager.plugins_dir();
+    let plugin_path = plugins_dir.join(&plugin_id);
+
+    Ok(read_plugin_manifest(&plugin_path))
+}
+
+/// 启动插件 UI（用于 binary 类型插件）
+///
+/// 启动插件的独立 UI 窗口
+#[tauri::command]
+pub async fn launch_plugin_ui(
+    state: tauri::State<'_, PluginManagerState>,
+    plugin_id: String,
+) -> Result<(), String> {
+    let manager = state.0.read().await;
+    let plugins_dir = manager.plugins_dir();
+    let plugin_path = plugins_dir.join(&plugin_id);
+
+    // 读取插件清单
+    let manifest =
+        read_plugin_manifest(&plugin_path).ok_or_else(|| format!("插件 {} 不存在", plugin_id))?;
+
+    // 检查是否是 binary 类型
+    if manifest.plugin_type != PluginType::Binary {
+        return Err("只有 binary 类型的插件支持独立启动".to_string());
+    }
+
+    // 获取二进制文件路径
+    let binary_config = manifest
+        .binary
+        .ok_or_else(|| "插件缺少 binary 配置".to_string())?;
+
+    let binary_name = &binary_config.binary_name;
+    let binary_path = plugin_path.join(binary_name);
+
+    if !binary_path.exists() {
+        return Err(format!("插件二进制文件不存在: {}", binary_path.display()));
+    }
+
+    // 启动二进制文件
+    std::process::Command::new(&binary_path)
+        .spawn()
+        .map_err(|e| format!("启动插件失败: {}", e))?;
+
+    Ok(())
 }
