@@ -99,8 +99,10 @@ function convertSimpleFormToA2UI(form: SimpleFormResponse): A2UIResponse {
               ? field.default
               : [field.default as string]
             : [],
+          // 兼容 "multiple" 和 "multipleSelection" 两种格式
           variant:
-            field.variant === "multiple"
+            field.variant === "multiple" ||
+            field.variant === ("multipleSelection" as any)
               ? "multipleSelection"
               : "mutuallyExclusive",
           layout: "wrap",
@@ -366,11 +368,21 @@ export function parseAIResponse(
  */
 export function parseA2UIJson(jsonStr: string): A2UIResponse | null {
   try {
-    // 清理 JSON 字符串
+    // 清理 JSON 字符串 - 处理可能存在的 ``` 标记
     let cleaned = jsonStr
       .replace(/^```(?:json|a2ui)?\s*/i, "")
       .replace(/\s*```$/i, "")
       .trim();
+
+    // 调试日志
+    if (cleaned.length > 50) {
+      console.log(
+        "[A2UI Parser] parseA2UIJson 输入长度:",
+        cleaned.length,
+        "开头:",
+        cleaned.slice(0, 50),
+      );
+    }
 
     const parsed = JSON.parse(cleaned);
 
@@ -392,7 +404,15 @@ export function parseA2UIJson(jsonStr: string): A2UIResponse | null {
     console.warn("[A2UI Parser] 无法识别的格式:", Object.keys(parsed));
     return null;
   } catch (e) {
-    console.warn("[A2UI Parser] JSON 解析失败:", e);
+    // 只在内容足够长时打印警告（可能是完整但格式错误的 JSON）
+    if (jsonStr.length > 100) {
+      console.warn(
+        "[A2UI Parser] JSON 解析失败 (内容长度:",
+        jsonStr.length,
+        "):",
+        e,
+      );
+    }
     return null;
   }
 }

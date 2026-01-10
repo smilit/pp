@@ -3,13 +3,15 @@
 //! 提供原生 Rust Agent 的 Tauri 命令，替代 aster sidecar 方案
 
 use crate::agent::{
-    AgentSession, ImageData, NativeAgentState, NativeChatRequest, NativeChatResponse, ProviderType,
-    StreamEvent, ToolLoopEngine,
+    AgentMessage, AgentSession, ImageData, MessageContent, NativeAgentState, NativeChatRequest,
+    NativeChatResponse, ProviderType, StreamEvent, ToolLoopEngine,
 };
+use crate::database::dao::agent::AgentDao;
 use crate::database::dao::api_key_provider::ApiKeyProviderDao;
 use crate::database::DbConnection;
 use crate::AppState;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tauri::{Emitter, State};
 use tokio::sync::mpsc;
 
@@ -247,6 +249,26 @@ pub async fn native_agent_chat_stream(
     // 如果是 terminal_mode，使用 TerminalTool 替代 BashTool
     let tool_registry = agent_state.get_tool_registry_with_mode(terminal_mode)?;
 
+    // 保存用户消息到数据库
+    let session_id_for_db = session_id.clone();
+    let message_for_db = message.clone();
+    let db_clone = Arc::clone(&db);
+    if let Some(ref sid) = session_id_for_db {
+        let conn = db_clone
+            .lock()
+            .map_err(|e| format!("数据库锁定失败: {}", e))?;
+        let user_message = AgentMessage {
+            role: "user".to_string(),
+            content: MessageContent::Text(message_for_db.clone()),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            tool_calls: None,
+            tool_call_id: None,
+        };
+        if let Err(e) = AgentDao::add_message(&conn, sid, &user_message) {
+            tracing::warn!("[NativeAgent] 保存用户消息到数据库失败: {}", e);
+        }
+    }
+
     let request = NativeChatRequest {
         session_id, // 使用前端传递的 session_id 以保持上下文
         message,
@@ -264,6 +286,7 @@ pub async fn native_agent_chat_stream(
 
     // 克隆 agent_state 用于后台任务（共享 sessions）
     let agent_state_clone = agent_state.inner().clone();
+    let session_id_for_task = session_id_for_db.clone();
 
     // 在后台任务中处理流式响应
     let event_name_clone = event_name.clone();
@@ -279,6 +302,9 @@ pub async fn native_agent_chat_stream(
         eprintln!("[native_agent_chat_stream] 工具循环引擎创建成功");
 
         let (tx, mut rx) = mpsc::channel::<StreamEvent>(100);
+
+        // 用于收集完整的助手响应
+        let mut full_content = String::new();
 
         // 使用 agent_state 的方法（共享 sessions）
         eprintln!(
@@ -301,6 +327,12 @@ pub async fn native_agent_chat_stream(
                 event,
                 event_name_clone
             );
+
+            // 收集文本增量
+            if let StreamEvent::TextDelta { ref text } = event {
+                full_content.push_str(text);
+            }
+
             if let Err(e) = app_handle.emit(&event_name_clone, &event) {
                 tracing::error!("[NativeAgent] 发送事件失败: {}", e);
                 eprintln!("[native_agent_chat_stream] 发送事件失败: {}", e);
@@ -321,6 +353,26 @@ pub async fn native_agent_chat_stream(
         match stream_task.await {
             Ok(result) => {
                 eprintln!("[native_agent_chat_stream] stream_task 完成: {:?}", result);
+
+                // 保存助手消息到数据库
+                if let Some(ref sid) = session_id_for_task {
+                    if !full_content.is_empty() {
+                        if let Ok(conn) = db_clone.lock() {
+                            let assistant_message = AgentMessage {
+                                role: "assistant".to_string(),
+                                content: MessageContent::Text(full_content.clone()),
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                                tool_calls: None,
+                                tool_call_id: None,
+                            };
+                            if let Err(e) = AgentDao::add_message(&conn, sid, &assistant_message) {
+                                tracing::warn!("[NativeAgent] 保存助手消息到数据库失败: {}", e);
+                            } else {
+                                tracing::info!("[NativeAgent] 助手消息已保存到数据库");
+                            }
+                        }
+                    }
+                }
             }
             Err(e) => {
                 eprintln!("[native_agent_chat_stream] stream_task 错误: {}", e);

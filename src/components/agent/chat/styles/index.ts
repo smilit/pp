@@ -115,18 +115,18 @@ export const TimeStamp = styled.span`
 `;
 
 export const AvatarCircle = styled.div<{ $isUser: boolean }>`
-  width: 32px;
-  height: 32px;
-  border-radius: 6px; // Squared rounded like Cherry
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: ${(props) =>
-    props.$isUser
-      ? "#10a37f"
-      : "#3b82f6"}; // Green for User, Blue/Primary for AI
+  background-color: #10a37f;
   color: white;
   font-size: 14px;
+  overflow: hidden;
 `;
 
 // Removed Bubble Styling - Now Transparent Text Block

@@ -56,6 +56,8 @@ export interface DocumentCanvasProps {
   onStateChange: (state: DocumentCanvasState) => void;
   /** 关闭画布回调 */
   onClose: () => void;
+  /** 是否正在流式输出 */
+  isStreaming?: boolean;
 }
 
 /**
@@ -90,6 +92,8 @@ export interface DocumentRendererProps {
   content: string;
   /** 平台类型 */
   platform: PlatformType;
+  /** 是否正在流式输出 */
+  isStreaming?: boolean;
 }
 
 /**

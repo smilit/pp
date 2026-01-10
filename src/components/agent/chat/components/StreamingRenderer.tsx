@@ -7,9 +7,12 @@
 
 import React, { memo, useMemo, useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, Lightbulb } from "lucide-react";
+import { ChevronDown, Lightbulb, FileText } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallList, ToolCallItem } from "./ToolCallDisplay";
+import { parseAIResponse } from "@/components/content-creator/a2ui/parser";
+import { A2UIRenderer } from "@/components/content-creator/a2ui/components";
+import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
 import type { ToolCallState } from "@/lib/api/agent";
 import type { ContentPart } from "../types";
 
@@ -71,6 +74,8 @@ interface StreamingTextProps {
   showCursor?: boolean;
   /** 每个字符的渲染间隔（毫秒），默认 12ms */
   charInterval?: number;
+  /** A2UI 表单提交回调 */
+  onA2UISubmit?: (formData: A2UIFormData) => void;
 }
 
 /**
@@ -80,7 +85,13 @@ interface StreamingTextProps {
  * 当流式结束时，立即显示完整文本。
  */
 const StreamingText: React.FC<StreamingTextProps> = memo(
-  ({ text, isStreaming, showCursor = true, charInterval = 12 }) => {
+  ({
+    text,
+    isStreaming,
+    showCursor = true,
+    charInterval = 12,
+    onA2UISubmit,
+  }) => {
     const [displayText, setDisplayText] = useState("");
     const displayIndexRef = useRef(0);
     const animationRef = useRef<number | null>(null);
@@ -89,6 +100,13 @@ const StreamingText: React.FC<StreamingTextProps> = memo(
     useEffect(() => {
       // 如果不是流式输出，直接显示完整文本
       if (!isStreaming) {
+        // 调试：确认非流式时是否正确设置完整文本
+        if (text.includes("```a2ui")) {
+          console.log(
+            "[StreamingText] isStreaming=false, 包含 a2ui 代码块，长度:",
+            text.length,
+          );
+        }
         setDisplayText(text);
         displayIndexRef.current = text.length;
         prevTextRef.current = text;
@@ -164,9 +182,78 @@ const StreamingText: React.FC<StreamingTextProps> = memo(
     const shouldShowCursor =
       isStreaming && showCursor && displayIndexRef.current < text.length;
 
+    // 使用 parseAIResponse 解析内容，以正确处理 a2ui 代码块
+    // 这比依赖 MarkdownRenderer 的 pre 组件更可靠
+    const parsedContent = useMemo(
+      () => parseAIResponse(displayText, isStreaming),
+      [displayText, isStreaming],
+    );
+
+    // 渲染解析后的内容
+    const renderContent = () => {
+      // 如果没有 a2ui 内容，直接使用 MarkdownRenderer
+      if (!parsedContent.hasA2UI && !parsedContent.hasPending) {
+        return (
+          <MarkdownRenderer content={displayText} onA2UISubmit={onA2UISubmit} />
+        );
+      }
+
+      // 有 a2ui 内容，按部分渲染
+      return (
+        <>
+          {parsedContent.parts.map((part, index) => {
+            switch (part.type) {
+              case "a2ui":
+                // 直接渲染 A2UI 表单
+                if (typeof part.content !== "string") {
+                  return (
+                    <A2UIRenderer
+                      key={`a2ui-${index}`}
+                      response={part.content}
+                      onSubmit={onA2UISubmit}
+                      className="my-3"
+                    />
+                  );
+                }
+                return null;
+
+              case "pending_a2ui":
+                // 显示加载状态
+                return (
+                  <div
+                    key={`pending-${index}`}
+                    className="flex items-center gap-2 px-3 py-4 bg-muted/50 rounded-lg animate-pulse"
+                  >
+                    <div className="w-4 h-4 rounded-full bg-muted-foreground/20" />
+                    <span className="text-sm text-muted-foreground">
+                      表单加载中...
+                    </span>
+                  </div>
+                );
+
+              case "text":
+              default: {
+                // 渲染普通文本
+                const textContent =
+                  typeof part.content === "string" ? part.content : "";
+                if (!textContent || textContent.trim() === "") return null;
+                return (
+                  <MarkdownRenderer
+                    key={`text-${index}`}
+                    content={textContent}
+                    onA2UISubmit={onA2UISubmit}
+                  />
+                );
+              }
+            }
+          })}
+        </>
+      );
+    };
+
     return (
       <div className="relative">
-        <MarkdownRenderer content={displayText} />
+        {renderContent()}
         {shouldShowCursor && <StreamingCursor />}
       </div>
     );
@@ -225,6 +312,12 @@ interface StreamingRendererProps {
    * 否则回退到 content + toolCalls 渲染方式
    */
   contentParts?: ContentPart[];
+  /** A2UI 表单提交回调 */
+  onA2UISubmit?: (formData: A2UIFormData) => void;
+  /** 文件写入回调 */
+  onWriteFile?: (content: string, fileName: string) => void;
+  /** 文件点击回调 */
+  onFileClick?: (fileName: string, content: string) => void;
 }
 
 /**
@@ -245,6 +338,9 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
     showCursor = true,
     thinkingContent: externalThinking,
     contentParts,
+    onA2UISubmit,
+    onWriteFile,
+    onFileClick,
   }) => {
     // 判断是否使用交错显示模式
     const useInterleavedMode = contentParts && contentParts.length > 0;
@@ -254,6 +350,33 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
       () => parseThinkingContent(content),
       [content],
     );
+
+    // 解析 A2UI 和 write_file 内容
+    const parsedContent = useMemo(
+      () => parseAIResponse(visibleText, isStreaming),
+      [visibleText, isStreaming],
+    );
+
+    // 处理文件写入 - 使用 ref 来追踪已处理的内容
+    const processedWriteFilesRef = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+      if (!onWriteFile) return;
+
+      for (const part of parsedContent.parts) {
+        if (
+          part.type === "write_file" &&
+          part.filePath &&
+          typeof part.content === "string"
+        ) {
+          const key = `${part.filePath}:${part.content.length}`;
+          if (!processedWriteFilesRef.current.has(key)) {
+            processedWriteFilesRef.current.add(key);
+            onWriteFile(part.content, part.filePath);
+          }
+        }
+      }
+    }, [parsedContent.parts, onWriteFile]);
 
     // 使用外部提供的思考内容或解析出的内容
     const finalThinking = externalThinking || thinkingText;
@@ -308,12 +431,17 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
                   text={partVisible}
                   isStreaming={isStreaming && isLastPart}
                   showCursor={shouldShowCursor && isLastPart}
+                  onA2UISubmit={onA2UISubmit}
                 />
               );
             } else if (part.type === "tool_use") {
               // 渲染单个工具调用
               return (
-                <ToolCallItem key={part.toolCall.id} toolCall={part.toolCall} />
+                <ToolCallItem
+                  key={part.toolCall.id}
+                  toolCall={part.toolCall}
+                  onFileClick={onFileClick}
+                />
               );
             }
             return null;
@@ -335,6 +463,89 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
     // 回退模式：传统的 content + toolCalls 分开渲染
     const hasToolCalls = toolCalls && toolCalls.length > 0;
 
+    // 渲染解析后的内容（包括 A2UI、write_file、普通文本）
+    const renderParsedContent = () => {
+      return parsedContent.parts.map((part, index) => {
+        switch (part.type) {
+          case "a2ui":
+            // 渲染 A2UI 表单 - content 是 A2UIResponse 类型
+            if (typeof part.content !== "string") {
+              return (
+                <A2UIRenderer
+                  key={`a2ui-${index}`}
+                  response={part.content}
+                  onSubmit={onA2UISubmit}
+                  className="my-3"
+                />
+              );
+            }
+            return null;
+
+          case "write_file":
+          case "pending_write_file": {
+            // 显示文件写入指示器 - content 是 string 类型
+            const fileContent =
+              typeof part.content === "string" ? part.content : "";
+            return (
+              <div
+                key={`write-${index}`}
+                className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg text-sm text-muted-foreground cursor-pointer hover:bg-muted/70 transition-colors"
+                onClick={() =>
+                  part.filePath &&
+                  fileContent &&
+                  onFileClick?.(part.filePath, fileContent)
+                }
+              >
+                <FileText className="w-4 h-4" />
+                <span>Write</span>
+                <span className="font-medium text-foreground">
+                  {part.filePath || "文档.md"}
+                </span>
+                {part.type === "pending_write_file" && (
+                  <span className="ml-auto animate-pulse">...</span>
+                )}
+              </div>
+            );
+          }
+
+          case "pending_a2ui":
+            // 显示正在加载的表单
+            return (
+              <div
+                key={`pending-${index}`}
+                className="flex items-center gap-2 px-3 py-4 bg-muted/50 rounded-lg animate-pulse"
+              >
+                <div className="w-4 h-4 rounded-full bg-muted-foreground/20" />
+                <span className="text-sm text-muted-foreground">
+                  表单加载中...
+                </span>
+              </div>
+            );
+
+          case "text":
+          default: {
+            // 渲染普通文本 - content 是 string 类型
+            const textContent =
+              typeof part.content === "string" ? part.content : "";
+            if (!textContent || textContent.trim() === "") return null;
+            return (
+              <StreamingText
+                key={`text-${index}`}
+                text={textContent}
+                isStreaming={
+                  isStreaming && index === parsedContent.parts.length - 1
+                }
+                showCursor={
+                  shouldShowCursor && index === parsedContent.parts.length - 1
+                }
+                onA2UISubmit={onA2UISubmit}
+              />
+            );
+          }
+        }
+      });
+    };
+
     return (
       <div className="flex flex-col gap-2">
         {/* 思考内容 - 显示在最前面 */}
@@ -346,16 +557,12 @@ export const StreamingRenderer: React.FC<StreamingRendererProps> = memo(
         )}
 
         {/* 工具调用区域 */}
-        {hasToolCalls && <ToolCallList toolCalls={toolCalls} />}
-
-        {/* 文本内容区域 - 使用 StreamingText 组件实现逐字符动画 */}
-        {visibleText.length > 0 && (
-          <StreamingText
-            text={visibleText}
-            isStreaming={isStreaming}
-            showCursor={shouldShowCursor}
-          />
+        {hasToolCalls && (
+          <ToolCallList toolCalls={toolCalls} onFileClick={onFileClick} />
         )}
+
+        {/* 解析后的内容区域（包括 A2UI、write_file、普通文本） */}
+        {renderParsedContent()}
 
         {/* 如果没有内容但正在流式输出，显示光标 */}
         {!hasVisibleContent &&

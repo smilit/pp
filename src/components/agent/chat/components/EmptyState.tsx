@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { useState } from "react";
 import styled, { keyframes, css } from "styled-components";
 import {
@@ -11,7 +12,60 @@ import {
   ChevronDown,
   Search,
   Globe,
+  GraduationCap,
+  Zap,
+  RefreshCw,
+  LayoutTemplate,
 } from "lucide-react";
+
+/**
+ * 创作模式类型
+ * 不同模式下 AI 的角色和用户参与度不同
+ */
+export type CreationMode = "guided" | "fast" | "hybrid" | "framework";
+
+/**
+ * 模式配置
+ */
+export const CREATION_MODE_CONFIG: Record<
+  CreationMode,
+  {
+    name: string;
+    icon: React.ReactNode;
+    aiRole: string;
+    userInvolvement: "high" | "medium" | "low";
+    description: string;
+  }
+> = {
+  guided: {
+    name: "引导模式",
+    icon: <GraduationCap className="w-4 h-4" />,
+    aiRole: "教练（提问引导）",
+    userInvolvement: "high",
+    description: "追求真实性、个人经历类内容",
+  },
+  fast: {
+    name: "快速模式",
+    icon: <Zap className="w-4 h-4" />,
+    aiRole: "助手（生成初稿）",
+    userInvolvement: "low",
+    description: "信息整理、快速产出",
+  },
+  hybrid: {
+    name: "混合模式",
+    icon: <RefreshCw className="w-4 h-4" />,
+    aiRole: "协作者（写框架）",
+    userInvolvement: "medium",
+    description: "平衡质量和效率",
+  },
+  framework: {
+    name: "框架模式",
+    icon: <LayoutTemplate className="w-4 h-4" />,
+    aiRole: "填充者（按框架生成）",
+    userInvolvement: "medium",
+    description: "固定格式文档（报告、标书）",
+  },
+};
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -283,10 +337,23 @@ interface EmptyStateProps {
   input: string;
   setInput: (value: string) => void;
   onSend: (value: string) => void;
+  /** 创作模式 */
+  creationMode?: CreationMode;
+  /** 创作模式变更回调 */
+  onCreationModeChange?: (mode: CreationMode) => void;
+  /** 当前激活的主题 */
+  activeTheme?: string;
+  /** 主题变更回调 */
+  onThemeChange?: (theme: string) => void;
 }
 
 // Scenarios Configuration
 const CATEGORIES = [
+  {
+    id: "general",
+    label: "通用对话",
+    icon: <Globe className="w-4 h-4" />,
+  },
   {
     id: "knowledge",
     label: "知识探索",
@@ -303,12 +370,27 @@ const CATEGORIES = [
   { id: "video", label: "短视频", icon: <Video className="w-4 h-4" /> },
 ];
 
+// 需要显示创作模式选择器的主题
+const CREATION_THEMES = ["social", "image", "office", "video"];
+
 export const EmptyState: React.FC<EmptyStateProps> = ({
   input,
   setInput,
   onSend,
+  creationMode = "guided",
+  onCreationModeChange,
+  activeTheme = "general",
+  onThemeChange,
 }) => {
-  const [activeTab, setActiveTab] = useState("knowledge");
+  // 使用外部传入的 activeTheme，如果有 onThemeChange 则使用受控模式
+  const handleThemeChange = (theme: string) => {
+    if (onThemeChange) {
+      onThemeChange(theme);
+    }
+  };
+
+  // 判断当前主题是否需要显示创作模式选择器
+  const showCreationModeSelector = CREATION_THEMES.includes(activeTheme);
 
   // Local state for parameters (Mocking visual state)
   const [platform, setPlatform] = useState("xiaohongshu");
@@ -319,13 +401,13 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   const handleSend = () => {
     if (!input.trim()) return;
     let prefix = "";
-    if (activeTab === "social") prefix = `[社媒创作: ${platform}] `;
-    if (activeTab === "image") prefix = `[图文生成: ${ratio}, ${style}] `;
-    if (activeTab === "video") prefix = `[视频脚本] `;
-    if (activeTab === "office") prefix = `[办公文档] `;
-    if (activeTab === "knowledge")
+    if (activeTheme === "social") prefix = `[社媒创作: ${platform}] `;
+    if (activeTheme === "image") prefix = `[图文生成: ${ratio}, ${style}] `;
+    if (activeTheme === "video") prefix = `[视频脚本] `;
+    if (activeTheme === "office") prefix = `[办公文档] `;
+    if (activeTheme === "knowledge")
       prefix = `[知识探索: ${depth === "deep" ? "深度" : "快速"}] `;
-    if (activeTab === "planning") prefix = `[计划规划] `;
+    if (activeTheme === "planning") prefix = `[计划规划] `;
 
     onSend(prefix + input);
   };
@@ -339,7 +421,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 
   // Dynamic Placeholder
   const getPlaceholder = () => {
-    switch (activeTab) {
+    switch (activeTheme) {
       case "knowledge":
         return "想了解什么？我可以帮你深度搜索、解析概念或总结长文...";
       case "planning":
@@ -352,6 +434,8 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
         return "输入视频主题，生成分镜脚本和口播文案...";
       case "office":
         return "输入需求，生成周报、汇报PPT大纲或商务邮件...";
+      case "general":
+        return "有什么我可以帮你的？";
       default:
         return "输入你的想法...";
     }
@@ -393,11 +477,13 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           {CATEGORIES.map((cat) => (
             <TabItem
               key={cat.id}
-              $active={activeTab === cat.id}
-              onClick={() => setActiveTab(cat.id)}
+              $active={activeTheme === cat.id}
+              onClick={() => handleThemeChange(cat.id)}
             >
               <span
-                className={activeTab === cat.id ? "text-primary" : "opacity-70"}
+                className={
+                  activeTheme === cat.id ? "text-primary" : "opacity-70"
+                }
               >
                 {cat.icon}
               </span>
@@ -416,7 +502,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 
           <Toolbar>
             <ToolLoginLeft>
-              {activeTab === "social" && (
+              {activeTheme === "social" && (
                 <>
                   <Select
                     value={platform}
@@ -491,7 +577,42 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
                 </>
               )}
 
-              {activeTab === "knowledge" && (
+              {/* 创作模式选择器 - 针对内容创作类主题 */}
+              {showCreationModeSelector && (
+                <Select
+                  value={creationMode}
+                  onValueChange={(val) =>
+                    onCreationModeChange?.(val as CreationMode)
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs bg-background border shadow-sm min-w-[120px]">
+                    <div className="flex items-center gap-2">
+                      {CREATION_MODE_CONFIG[creationMode].icon}
+                      <span>{CREATION_MODE_CONFIG[creationMode].name}</span>
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent className="p-1 min-w-[200px]">
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium">
+                      选择创作模式
+                    </div>
+                    {(
+                      Object.entries(CREATION_MODE_CONFIG) as [
+                        CreationMode,
+                        (typeof CREATION_MODE_CONFIG)[CreationMode],
+                      ][]
+                    ).map(([key, config]) => (
+                      <SelectItem key={key} value={key}>
+                        <div className="flex items-center gap-3">
+                          <span className="flex-shrink-0">{config.icon}</span>
+                          <span className="font-medium">{config.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {activeTheme === "knowledge" && (
                 <>
                   <Badge
                     variant="secondary"
@@ -513,7 +634,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
                 </>
               )}
 
-              {activeTab === "planning" && (
+              {activeTheme === "planning" && (
                 <Badge
                   variant="outline"
                   className="h-8 font-normal text-muted-foreground gap-1"
@@ -523,7 +644,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
                 </Badge>
               )}
 
-              {activeTab === "image" && (
+              {activeTheme === "image" && (
                 <>
                   <Popover>
                     <PopoverTrigger asChild>
@@ -634,7 +755,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 
         {/* Dynamic Inspiration/Tips based on Tab - Styled nicely */}
         <div className="w-full max-w-[800px] flex flex-wrap gap-3 justify-center">
-          {activeTab === "social" &&
+          {activeTheme === "social" &&
             ["爆款标题生成", "小红书文案", "公众号排版", "评论区回复"].map(
               (item) => (
                 <Badge
@@ -646,7 +767,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
                 </Badge>
               ),
             )}
-          {activeTab === "image" &&
+          {activeTheme === "image" &&
             ["海报设计", "插画生成", "UI 界面", "Logo 设计", "摄影修图"].map(
               (item) => (
                 <Badge
@@ -658,7 +779,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
                 </Badge>
               ),
             )}
-          {activeTab === "knowledge" &&
+          {activeTheme === "knowledge" &&
             ["解释量子计算", "总结这篇论文", "如何制定OKR", "分析行业趋势"].map(
               (item) => (
                 <Badge
@@ -670,7 +791,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
                 </Badge>
               ),
             )}
-          {activeTab === "planning" &&
+          {activeTheme === "planning" &&
             ["日本旅行计划", "年度职业规划", "婚礼流程表", "健身计划"].map(
               (item) => (
                 <Badge

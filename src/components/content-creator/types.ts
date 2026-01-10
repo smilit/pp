@@ -5,12 +5,34 @@
  */
 
 import type React from "react";
-import { ThemeType } from "../chat/types";
-import { CreationMode } from "../chat/components/ModeSelector";
 
-// 重新导出
-export type { ThemeType } from "../chat/types";
-export type { CreationMode } from "../chat/components/ModeSelector";
+/**
+ * 主题类型
+ * - general: 通用对话
+ * - knowledge: 知识探索
+ * - planning: 计划规划
+ * - social-media: 社媒内容
+ * - poster: 图文海报
+ * - document: 办公文档
+ * - video: 短视频
+ */
+export type ThemeType =
+  | "general"
+  | "knowledge"
+  | "planning"
+  | "social-media"
+  | "poster"
+  | "document"
+  | "video";
+
+/**
+ * 创作模式类型
+ * - guided: 引导模式（AI 提问引导，用户参与度高）
+ * - fast: 快速模式（AI 生成初稿，用户参与度低）
+ * - hybrid: 混合模式（AI 写框架，用户填核心）
+ * - framework: 框架模式（用户提供框架，AI 按框架填充）
+ */
+export type CreationMode = "guided" | "fast" | "hybrid" | "framework";
 
 /**
  * 布局模式

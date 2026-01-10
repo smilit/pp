@@ -26,7 +26,72 @@ function getWorkflowSteps(
     return [];
   }
 
-  // 基础步骤定义
+  // 快速模式：简化步骤（收集需求 → 生成初稿 → 迭代修改）
+  if (mode === "fast") {
+    return [
+      {
+        id: "clarify",
+        type: "clarify",
+        title: "明确需求",
+        description: "填写创作主题和要求",
+        form: {
+          fields: [
+            { name: "topic", label: "内容主题", type: "text", required: true },
+            {
+              name: "keyPoints",
+              label: "核心要点",
+              type: "text",
+              required: false,
+            },
+            {
+              name: "audience",
+              label: "目标读者",
+              type: "select",
+              required: false,
+              options: [
+                { label: "普通大众", value: "general" },
+                { label: "专业人士", value: "professional" },
+                { label: "学生群体", value: "student" },
+                { label: "技术开发者", value: "developer" },
+              ],
+            },
+            {
+              name: "wordCount",
+              label: "字数要求",
+              type: "select",
+              required: false,
+              options: [
+                { label: "1000字左右", value: "1000" },
+                { label: "2000字左右", value: "2000" },
+                { label: "3000字左右", value: "3000" },
+                { label: "5000字以上", value: "5000" },
+              ],
+            },
+          ],
+          submitLabel: "开始生成",
+        },
+        behavior: { skippable: false, redoable: true, autoAdvance: true },
+      },
+      {
+        id: "write",
+        type: "write",
+        title: "生成初稿",
+        description: "AI 生成完整初稿",
+        aiTask: { taskType: "write", streaming: true },
+        behavior: { skippable: false, redoable: true, autoAdvance: false },
+      },
+      {
+        id: "polish",
+        type: "polish",
+        title: "迭代修改",
+        description: "根据反馈修改完善",
+        aiTask: { taskType: "polish", streaming: true },
+        behavior: { skippable: true, redoable: true, autoAdvance: false },
+      },
+    ];
+  }
+
+  // 基础步骤定义（引导模式和其他模式）
   const baseSteps: StepDefinition[] = [
     {
       id: "clarify",
@@ -123,21 +188,6 @@ function getWorkflowSteps(
       behavior: { skippable: true, redoable: true, autoAdvance: false },
     },
   ];
-
-  // 根据模式调整步骤
-  if (mode === "fast") {
-    // 快速模式：跳过调研和润色
-    return baseSteps.map((step) => ({
-      ...step,
-      behavior: {
-        ...step.behavior,
-        skippable:
-          step.type === "research" || step.type === "polish"
-            ? true
-            : step.behavior.skippable,
-      },
-    }));
-  }
 
   return baseSteps;
 }

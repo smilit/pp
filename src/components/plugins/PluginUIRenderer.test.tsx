@@ -11,12 +11,19 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { PluginUIRenderer } from "./PluginUIRenderer";
 
-// Mock lucide-react icons
-vi.mock("lucide-react", () => ({
-  AlertCircle: () => <span data-testid="alert-circle-icon">AlertCircle</span>,
-  Package: () => <span data-testid="package-icon">Package</span>,
-  Loader2: () => <span data-testid="loader-icon">Loader2</span>,
-}));
+// Mock lucide-react icons - use importOriginal to include all icons
+vi.mock("lucide-react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("lucide-react")>();
+  return {
+    ...actual,
+    AlertCircle: () => <span data-testid="alert-circle-icon">AlertCircle</span>,
+    Package: () => <span data-testid="package-icon">Package</span>,
+    Loader2: () => <span data-testid="loader-icon">Loader2</span>,
+    ExternalLink: () => (
+      <span data-testid="external-link-icon">ExternalLink</span>
+    ),
+  };
+});
 
 // Mock tauri invoke
 vi.mock("@tauri-apps/api/core", () => ({

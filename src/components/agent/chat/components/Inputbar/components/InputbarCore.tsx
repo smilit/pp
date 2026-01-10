@@ -15,7 +15,7 @@ import {
   ToolButton,
 } from "../styles";
 import { InputbarTools } from "./InputbarTools";
-import { ArrowUp, Loader2, X, Languages } from "lucide-react";
+import { ArrowUp, Square, X, Languages } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -28,6 +28,8 @@ interface InputbarCoreProps {
   text: string;
   setText: (text: string) => void;
   onSend: () => void;
+  /** 停止生成回调 */
+  onStop?: () => void;
   isLoading?: boolean;
   disabled?: boolean;
   activeTools: Record<string, boolean>;
@@ -42,6 +44,7 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
   text,
   setText,
   onSend,
+  onStop,
   isLoading = false,
   disabled = false,
   activeTools,
@@ -134,11 +137,12 @@ export const InputbarCore: React.FC<InputbarCoreProps> = ({
               </Tooltip>
             </TooltipProvider>
             <SendButton
-              onClick={onSend}
-              disabled={!hasContent || disabled || isLoading}
+              onClick={isLoading ? onStop : onSend}
+              disabled={!isLoading && (!hasContent || disabled)}
+              $isStop={isLoading}
             >
               {isLoading ? (
-                <Loader2 size={18} className="animate-spin" />
+                <Square size={16} fill="currentColor" />
               ) : (
                 <ArrowUp size={20} strokeWidth={3} />
               )}

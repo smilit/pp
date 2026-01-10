@@ -22,7 +22,7 @@ describe("Edge Cases: Text Map", () => {
 
   it("should handle missing keys gracefully", () => {
     const map = getTextMap("en");
-    expect(map["不存在的文本"]).toBeUndefined();
+    expect(map["这是一个绝对不存在的测试键_xyz_123"]).toBeUndefined();
   });
 
   it("should skip comment entries", () => {

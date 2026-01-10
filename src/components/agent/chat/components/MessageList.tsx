@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { User, Bot, Copy, Edit2, Trash2, Check } from "lucide-react";
+import { User, Copy, Edit2, Trash2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -18,17 +18,28 @@ import { MarkdownRenderer } from "./MarkdownRenderer";
 import { StreamingRenderer } from "./StreamingRenderer";
 import { TokenUsageDisplay } from "./TokenUsageDisplay";
 import { Message } from "../types";
+import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
+import logoImg from "/logo.png";
 
 interface MessageListProps {
   messages: Message[];
   onDeleteMessage?: (id: string) => void;
   onEditMessage?: (id: string, content: string) => void;
+  /** A2UI 表单提交回调 */
+  onA2UISubmit?: (formData: A2UIFormData, messageId: string) => void;
+  /** 文件写入回调 */
+  onWriteFile?: (content: string, fileName: string) => void;
+  /** 文件点击回调 */
+  onFileClick?: (fileName: string, content: string) => void;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
   messages,
   onDeleteMessage,
   onEditMessage,
+  onA2UISubmit,
+  onWriteFile,
+  onFileClick,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -86,7 +97,11 @@ export const MessageList: React.FC<MessageListProps> = ({
       <div className="py-8 flex flex-col">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-64 text-muted-foreground opacity-50">
-            <Bot size={48} className="mb-4 text-primary/20" />
+            <img
+              src={logoImg}
+              alt="ProxyCast"
+              className="w-12 h-12 mb-4 opacity-20"
+            />
             <p className="text-lg font-medium">开始一段新的对话吧</p>
           </div>
         )}
@@ -94,15 +109,30 @@ export const MessageList: React.FC<MessageListProps> = ({
         {messages.map((msg) => (
           <MessageWrapper key={msg.id} $isUser={msg.role === "user"}>
             <AvatarColumn>
-              <AvatarCircle $isUser={msg.role === "user"}>
-                {msg.role === "user" ? <User size={18} /> : <Bot size={18} />}
-              </AvatarCircle>
+              {msg.role === "user" ? (
+                <AvatarCircle $isUser={true}>
+                  <User size={20} />
+                </AvatarCircle>
+              ) : (
+                <img
+                  src={logoImg}
+                  alt="ProxyCast"
+                  style={{
+                    width: 45,
+                    height: 45,
+                    minWidth: 45,
+                    minHeight: 45,
+                    borderRadius: 8,
+                    display: "block",
+                  }}
+                />
+              )}
             </AvatarColumn>
 
             <ContentColumn>
               <MessageHeader>
                 <SenderName>
-                  {msg.role === "user" ? "用户" : "Assistant"}
+                  {msg.role === "user" ? "用户" : "ProxyCast"}
                 </SenderName>
                 <TimeStamp>{formatTime(msg.timestamp)}</TimeStamp>
               </MessageHeader>
@@ -137,9 +167,23 @@ export const MessageList: React.FC<MessageListProps> = ({
                     toolCalls={msg.toolCalls}
                     showCursor={msg.isThinking && !msg.content}
                     contentParts={msg.contentParts}
+                    onA2UISubmit={
+                      onA2UISubmit
+                        ? (formData) => onA2UISubmit(formData, msg.id)
+                        : undefined
+                    }
+                    onWriteFile={onWriteFile}
+                    onFileClick={onFileClick}
                   />
                 ) : (
-                  <MarkdownRenderer content={msg.content} />
+                  <MarkdownRenderer
+                    content={msg.content}
+                    onA2UISubmit={
+                      onA2UISubmit
+                        ? (formData) => onA2UISubmit(formData, msg.id)
+                        : undefined
+                    }
+                  />
                 )}
 
                 {msg.images && msg.images.length > 0 && (

@@ -537,6 +537,45 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         [],
     )?;
 
+    // ============================================================================
+    // Agent 会话相关表
+    // ============================================================================
+
+    // Agent 会话表
+    // 存储 Agent 对话会话的元数据
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS agent_sessions (
+            id TEXT PRIMARY KEY,
+            model TEXT NOT NULL,
+            system_prompt TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // Agent 消息表
+    // 存储每个会话的消息历史
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS agent_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content_json TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            tool_calls_json TEXT,
+            tool_call_id TEXT,
+            FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 创建 agent_messages 索引
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages(session_id)",
+        [],
+    )?;
+
     Ok(())
 }
 

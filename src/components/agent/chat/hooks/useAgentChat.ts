@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
@@ -9,6 +9,7 @@ import {
   sendAgentMessageStream,
   listAgentSessions,
   deleteAgentSession,
+  getAgentSessionMessages,
   parseStreamEvent,
   type AgentProcessStatus,
   type SessionInfo,
@@ -80,7 +81,16 @@ const saveTransient = (key: string, value: unknown) => {
   }
 };
 
-export function useAgentChat() {
+/** useAgentChat 的配置选项 */
+interface UseAgentChatOptions {
+  /** 系统提示词（用于内容创作等场景） */
+  systemPrompt?: string;
+  /** 文件写入回调 */
+  onWriteFile?: (content: string, fileName: string) => void;
+}
+
+export function useAgentChat(options: UseAgentChatOptions = {}) {
+  const { systemPrompt, onWriteFile } = options;
   const [processStatus, setProcessStatus] = useState<AgentProcessStatus>({
     running: false,
   });
@@ -113,6 +123,11 @@ export function useAgentChat() {
   const [topics, setTopics] = useState<Topic[]>([]);
 
   const [isSending, setIsSending] = useState(false);
+
+  // 用于保存当前流式请求的取消函数
+  const unlistenRef = useRef<UnlistenFn | null>(null);
+  // 用于保存当前正在处理的消息 ID
+  const currentAssistantMsgIdRef = useRef<string | null>(null);
 
   // 加载动态模型配置
   useEffect(() => {
@@ -163,6 +178,19 @@ export function useAgentChat() {
   useEffect(() => {
     saveTransient("agent_messages", messages);
   }, [messages]);
+
+  // 当 systemPrompt 变化时，需要创建新会话以应用新的系统提示词
+  // 这对于内容创作模式切换非常重要
+  useEffect(() => {
+    if (systemPrompt !== undefined && sessionId) {
+      console.log(
+        "[useAgentChat] systemPrompt 变化，重置 session 以应用新提示词",
+      );
+      setSessionId(null);
+    }
+    // 注意：只在 systemPrompt 变化时触发，不包含 sessionId
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [systemPrompt]);
 
   // 加载话题列表
   const loadTopics = async () => {
@@ -269,10 +297,11 @@ export function useAgentChat() {
       // });
 
       // Create new session with CURRENT provider/model as baseline
+      // 传递 systemPrompt 用于内容创作等场景
       const response = await createAgentSession(
         providerType,
         model || undefined,
-        undefined,
+        systemPrompt, // 传递系统提示词
         undefined, // details.length > 0 ? details : undefined
       );
 
@@ -326,6 +355,9 @@ export function useAgentChat() {
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setIsSending(true);
+
+    // 保存当前消息 ID 到 ref，用于停止时更新状态
+    currentAssistantMsgIdRef.current = assistantMsgId;
 
     // 用于累积流式内容
     let accumulatedContent = "";
@@ -436,6 +468,9 @@ export function useAgentChat() {
               ),
             );
             setIsSending(false);
+            // 清理 ref
+            unlistenRef.current = null;
+            currentAssistantMsgIdRef.current = null;
             if (unlisten) {
               unlisten();
               unlisten = null;
@@ -461,6 +496,9 @@ export function useAgentChat() {
               ),
             );
             setIsSending(false);
+            // 清理 ref
+            unlistenRef.current = null;
+            currentAssistantMsgIdRef.current = null;
             if (unlisten) {
               unlisten();
               unlisten = null;
@@ -477,20 +515,48 @@ export function useAgentChat() {
               status: "running" as const,
               startTime: new Date(),
             };
+
+            // 如果是写入文件工具，立即调用 onWriteFile 展开右边栏
+            const toolName = data.tool_name.toLowerCase();
+            if (toolName.includes("write") || toolName.includes("create")) {
+              try {
+                const args = JSON.parse(data.arguments || "{}");
+                const filePath = args.path || args.file_path || args.filePath;
+                const content = args.content || args.text || "";
+                if (filePath && content && onWriteFile) {
+                  console.log(`[Tool Start] 触发文件写入: ${filePath}`);
+                  onWriteFile(content, filePath);
+                }
+              } catch (e) {
+                console.warn("[Tool Start] 解析工具参数失败:", e);
+              }
+            }
+
             setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMsgId
-                  ? {
-                      ...msg,
-                      toolCalls: [...(msg.toolCalls || []), newToolCall],
-                      // 添加到 contentParts，支持交错显示
-                      contentParts: [
-                        ...(msg.contentParts || []),
-                        { type: "tool_use" as const, toolCall: newToolCall },
-                      ],
-                    }
-                  : msg,
-              ),
+              prev.map((msg) => {
+                if (msg.id !== assistantMsgId) return msg;
+
+                // 检查是否已存在相同 ID 的工具调用（避免重复）
+                const existingToolCall = msg.toolCalls?.find(
+                  (tc) => tc.id === data.tool_id,
+                );
+                if (existingToolCall) {
+                  console.log(
+                    `[Tool Start] 工具调用已存在，跳过: ${data.tool_id}`,
+                  );
+                  return msg;
+                }
+
+                return {
+                  ...msg,
+                  toolCalls: [...(msg.toolCalls || []), newToolCall],
+                  // 添加到 contentParts，支持交错显示
+                  contentParts: [
+                    ...(msg.contentParts || []),
+                    { type: "tool_use" as const, toolCall: newToolCall },
+                  ],
+                };
+              }),
             );
             break;
           }
@@ -551,11 +617,21 @@ export function useAgentChat() {
         }
       });
 
+      // 保存 unlisten 到 ref，用于停止功能
+      unlistenRef.current = unlisten;
+
       // 5. 发送流式请求（传递 sessionId 以保持上下文）
       const imagesToSend =
         images.length > 0
           ? images.map((img) => ({ data: img.data, media_type: img.mediaType }))
           : undefined;
+
+      console.log("[AgentChat] 发送消息:", {
+        content: content.slice(0, 50),
+        sessionId: activeSessionId,
+        model,
+        provider: providerType,
+      });
 
       await sendAgentMessageStream(
         content,
@@ -604,12 +680,45 @@ export function useAgentChat() {
   const switchTopic = async (topicId: string) => {
     if (topicId === sessionId) return;
 
-    // 清空当前消息，切换到新话题
-    // 注意：后端目前没有存储消息历史，所以切换话题后消息会丢失
-    // 未来可以实现消息持久化
-    setMessages([]);
-    setSessionId(topicId);
-    toast.info("已切换话题");
+    try {
+      // 从后端加载消息历史
+      const agentMessages = await getAgentSessionMessages(topicId);
+
+      // 转换为前端 Message 格式
+      const loadedMessages: Message[] = agentMessages.map((msg, index) => {
+        // 提取文本内容
+        let content = "";
+        if (typeof msg.content === "string") {
+          content = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          content = msg.content
+            .filter(
+              (part): part is { type: "text"; text: string } =>
+                part.type === "text",
+            )
+            .map((part) => part.text)
+            .join("\n");
+        }
+
+        return {
+          id: `${topicId}-${index}`,
+          role: msg.role as "user" | "assistant",
+          content,
+          timestamp: new Date(msg.timestamp),
+          isThinking: false,
+        };
+      });
+
+      setMessages(loadedMessages);
+      setSessionId(topicId);
+      toast.info("已切换话题");
+    } catch (error) {
+      console.error("[useAgentChat] 加载消息历史失败:", error);
+      // 如果加载失败，仍然切换话题但清空消息
+      setMessages([]);
+      setSessionId(topicId);
+      toast.error("加载对话历史失败");
+    }
   };
 
   // 删除话题
@@ -649,6 +758,34 @@ export function useAgentChat() {
     }
   };
 
+  // 停止当前发送中的消息
+  const stopSending = () => {
+    // 取消事件监听
+    if (unlistenRef.current) {
+      unlistenRef.current();
+      unlistenRef.current = null;
+    }
+
+    // 更新当前消息状态为已停止
+    if (currentAssistantMsgIdRef.current) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === currentAssistantMsgIdRef.current
+            ? {
+                ...msg,
+                isThinking: false,
+                content: msg.content || "(已停止生成)",
+              }
+            : msg,
+        ),
+      );
+      currentAssistantMsgIdRef.current = null;
+    }
+
+    setIsSending(false);
+    toast.info("已停止生成");
+  };
+
   return {
     processStatus,
     handleStartProcess,
@@ -666,6 +803,7 @@ export function useAgentChat() {
     messages,
     isSending,
     sendMessage,
+    stopSending,
     clearMessages,
     deleteMessage,
     editMessage,

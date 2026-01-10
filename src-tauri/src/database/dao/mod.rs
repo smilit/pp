@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod api_key_provider;
 pub mod installed_plugins;
 pub mod mcp;

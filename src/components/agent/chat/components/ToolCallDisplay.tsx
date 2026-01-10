@@ -5,7 +5,13 @@
  * Requirements: 9.1, 9.2 - 工具执行指示器和结果折叠面板
  */
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import {
   Terminal,
   FileText,
@@ -20,6 +26,9 @@ import {
   Code2,
   Settings,
   Wrench,
+  ExternalLink,
+  Check,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ToolCallState } from "@/lib/api/agent";
@@ -44,7 +53,7 @@ interface ToolCallStatusIndicatorProps {
   className?: string;
 }
 
-const ToolCallStatusIndicator: React.FC<ToolCallStatusIndicatorProps> = ({
+const _ToolCallStatusIndicator: React.FC<ToolCallStatusIndicatorProps> = ({
   status,
   className,
 }) => {
@@ -121,7 +130,87 @@ const getToolIcon = (toolName: string) => {
 
 // ============ 工具描述生成 ============
 
-const getToolDescription = (
+/**
+ * 获取工具操作描述（用于简洁显示）
+ */
+const getToolActionLabel = (
+  toolName: string,
+  status: ToolCallStatus,
+): { action: string; icon: React.ElementType } => {
+  const name = toolName.toLowerCase();
+  const isCompleted = status === "completed";
+  const isFailed = status === "failed";
+
+  if (name.includes("write") || name.includes("create")) {
+    if (isFailed) return { action: "写入失败", icon: FilePlus };
+    return { action: isCompleted ? "已写入" : "写入文件", icon: FilePlus };
+  }
+  if (name.includes("read")) {
+    if (isFailed) return { action: "读取失败", icon: Eye };
+    return { action: isCompleted ? "已读取" : "读取文件", icon: Eye };
+  }
+  if (name.includes("edit") || name.includes("replace")) {
+    if (isFailed) return { action: "编辑失败", icon: Edit3 };
+    return { action: isCompleted ? "已编辑" : "编辑文件", icon: Edit3 };
+  }
+  if (
+    name.includes("bash") ||
+    name.includes("shell") ||
+    name.includes("exec")
+  ) {
+    if (isFailed) return { action: "执行失败", icon: Terminal };
+    return { action: isCompleted ? "已执行" : "执行命令", icon: Terminal };
+  }
+  if (name.includes("search") || name.includes("grep")) {
+    if (isFailed) return { action: "搜索失败", icon: Search };
+    return { action: isCompleted ? "已搜索" : "搜索中", icon: Search };
+  }
+  if (name.includes("list") || name.includes("dir")) {
+    if (isFailed) return { action: "列出失败", icon: FolderOpen };
+    return { action: isCompleted ? "已列出" : "列出目录", icon: FolderOpen };
+  }
+
+  // 默认
+  const Icon = getToolIcon(toolName);
+  if (isFailed) return { action: "执行失败", icon: Icon };
+  return { action: isCompleted ? "已完成" : "执行中", icon: Icon };
+};
+
+/**
+ * 获取文件名（从路径中提取）
+ */
+const getFileName = (filePath: string): string => {
+  const parts = filePath.split("/");
+  return parts[parts.length - 1] || filePath;
+};
+
+/**
+ * 获取文件扩展名对应的标签颜色
+ */
+const getFileTypeColor = (fileName: string): string => {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  switch (ext) {
+    case "ts":
+    case "tsx":
+      return "bg-blue-500/20 text-blue-400";
+    case "js":
+    case "jsx":
+      return "bg-yellow-500/20 text-yellow-400";
+    case "md":
+      return "bg-green-500/20 text-green-400";
+    case "json":
+      return "bg-orange-500/20 text-orange-400";
+    case "css":
+    case "scss":
+      return "bg-pink-500/20 text-pink-400";
+    case "html":
+      return "bg-red-500/20 text-red-400";
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+};
+
+const _getToolDescription = (
   toolName: string,
   args: Record<string, ToolCallArgumentValue>,
 ): string => {
@@ -249,6 +338,7 @@ interface ToolCallArgumentsProps {
   args: Record<string, ToolCallArgumentValue>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ToolCallArguments: React.FC<ToolCallArgumentsProps> = ({ args }) => {
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
 
@@ -345,6 +435,7 @@ interface ToolLogsViewProps {
   isStartExpanded?: boolean;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ToolLogsView: React.FC<ToolLogsViewProps> = ({
   logs,
   working,
@@ -393,6 +484,7 @@ interface ToolResultViewProps {
   isStartExpanded?: boolean;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ToolResultView: React.FC<ToolResultViewProps> = ({
   result,
   isError = false,
@@ -428,13 +520,16 @@ const ToolResultView: React.FC<ToolResultViewProps> = ({
 interface ToolCallDisplayProps {
   toolCall: ToolCallState;
   defaultExpanded?: boolean;
+  /** 文件点击回调 - 用于打开右边栏显示文件内容 */
+  onFileClick?: (fileName: string, content: string) => void;
 }
 
 export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   toolCall,
   defaultExpanded = false,
+  onFileClick,
 }) => {
-  const IconComponent = getToolIcon(toolCall.name);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   // 解析参数
   const parsedArgs = useMemo(() => {
@@ -446,85 +541,137 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
     }
   }, [toolCall.arguments]);
 
-  // 生成工具描述
-  const toolDescription = useMemo(
-    () => getToolDescription(toolCall.name, parsedArgs),
-    [toolCall.name, parsedArgs],
+  // 获取操作标签和图标
+  const { action, icon: ActionIcon } = useMemo(
+    () => getToolActionLabel(toolCall.name, toolCall.status),
+    [toolCall.name, toolCall.status],
   );
 
-  // 计算执行时间
-  const executionTime = useMemo(() => {
-    if (toolCall.endTime && toolCall.startTime) {
-      const ms = toolCall.endTime.getTime() - toolCall.startTime.getTime();
-      return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+  // 获取文件路径
+  const filePath = useMemo(() => {
+    const path = parsedArgs.path || parsedArgs.file_path || parsedArgs.filePath;
+    return path ? String(path) : null;
+  }, [parsedArgs]);
+
+  // 获取文件名
+  const fileName = useMemo(() => {
+    if (filePath) return getFileName(filePath);
+    // 对于命令，显示命令内容
+    if (parsedArgs.command) {
+      const cmd = String(parsedArgs.command);
+      return cmd.length > 40 ? cmd.slice(0, 40) + "..." : cmd;
+    }
+    // 对于搜索，显示搜索内容
+    if (parsedArgs.pattern || parsedArgs.query) {
+      const q = String(parsedArgs.pattern || parsedArgs.query);
+      return q.length > 30 ? q.slice(0, 30) + "..." : q;
     }
     return null;
-  }, [toolCall.startTime, toolCall.endTime]);
+  }, [filePath, parsedArgs]);
 
-  const hasArguments = Object.keys(parsedArgs).length > 0;
-  const hasResult = toolCall.status !== "running" && toolCall.result;
-  const hasLogs = toolCall.logs && toolCall.logs.length > 0;
+  // 获取文件内容（用于点击打开右边栏）
+  const fileContent = useMemo(() => {
+    const content = parsedArgs.content || parsedArgs.text;
+    return content ? String(content) : null;
+  }, [parsedArgs]);
+
   const isRunning = toolCall.status === "running";
+  const isCompleted = toolCall.status === "completed";
+  const isFailed = toolCall.status === "failed";
+  const hasResult = !isRunning && toolCall.result;
 
-  // 工具标签
-  const toolLabel = (
-    <span className="flex items-center gap-2 min-w-0">
-      <div className="relative inline-block">
-        <IconComponent className="w-4 h-4 shrink-0" />
-        <ToolCallStatusIndicator status={toolCall.status} />
-      </div>
-      <span className="truncate flex-1 min-w-0">{toolDescription}</span>
-      {executionTime && (
-        <span className="text-xs text-muted-foreground shrink-0">
-          {executionTime}
-        </span>
-      )}
-    </span>
-  );
+  // 处理点击事件 - 如果是文件写入工具，打开右边栏
+  const handleOpenFile = useCallback(() => {
+    if (filePath && fileContent && onFileClick) {
+      onFileClick(filePath, fileContent);
+    }
+  }, [filePath, fileContent, onFileClick]);
 
+  // 简洁模式：单行显示
   return (
-    <div className="w-full text-sm rounded-lg overflow-hidden border border-border bg-muted/30">
-      <ExpandablePanel
-        label={toolLabel}
-        isStartExpanded={defaultExpanded || isRunning}
-        isForceExpand={isRunning}
+    <div className="group">
+      {/* 主行 */}
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3 py-2 rounded-lg transition-colors",
+          "hover:bg-muted/50",
+          isExpanded && "bg-muted/30",
+        )}
       >
-        {/* 工具参数 */}
-        {hasArguments && (
-          <div className="border-t border-border">
-            <ExpandablePanel
-              label={
-                <span className="pl-2 text-sm text-muted-foreground">参数</span>
-              }
-              isStartExpanded={false}
+        {/* 状态图标 */}
+        <div className="flex items-center justify-center w-6 h-6 rounded-md bg-muted/50 shrink-0">
+          {isRunning ? (
+            <Loader2 className="w-4 h-4 text-primary animate-spin" />
+          ) : isCompleted ? (
+            <Check className="w-4 h-4 text-green-500" />
+          ) : isFailed ? (
+            <X className="w-4 h-4 text-red-500" />
+          ) : (
+            <ActionIcon className="w-4 h-4 text-muted-foreground" />
+          )}
+        </div>
+
+        {/* 操作描述 */}
+        <span className="text-sm text-muted-foreground shrink-0">{action}</span>
+
+        {/* 文件名标签 */}
+        {fileName && (
+          <span
+            className={cn(
+              "px-2 py-0.5 rounded text-xs font-mono",
+              filePath
+                ? getFileTypeColor(fileName)
+                : "bg-muted text-muted-foreground",
+            )}
+          >
+            {fileName}
+          </span>
+        )}
+
+        {/* 右侧操作按钮 */}
+        <div className="flex items-center gap-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* 打开文件按钮 */}
+          {filePath && fileContent && onFileClick && (
+            <button
+              onClick={handleOpenFile}
+              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+              title="在画布中打开"
             >
-              <ToolCallArguments args={parsedArgs} />
-            </ExpandablePanel>
-          </div>
-        )}
+              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+            </button>
+          )}
 
-        {/* 执行日志 */}
-        {hasLogs && (
-          <div className="border-t border-border">
-            <ToolLogsView
-              logs={toolCall.logs!}
-              working={isRunning}
-              isStartExpanded={isRunning}
-            />
-          </div>
-        )}
+          {/* 展开/折叠按钮 */}
+          {hasResult && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-1.5 rounded-md hover:bg-muted transition-colors"
+              title={isExpanded ? "收起详情" : "展开详情"}
+            >
+              <ChevronRight
+                className={cn(
+                  "w-3.5 h-3.5 text-muted-foreground transition-transform",
+                  isExpanded && "rotate-90",
+                )}
+              />
+            </button>
+          )}
+        </div>
+      </div>
 
-        {/* 执行结果 */}
-        {hasResult && (
-          <div className="border-t border-border">
-            <ToolResultView
-              result={toolCall.result?.error || toolCall.result?.output || ""}
-              isError={!!toolCall.result?.error}
-              isStartExpanded={!!toolCall.result?.error}
-            />
-          </div>
-        )}
-      </ExpandablePanel>
+      {/* 展开的详情 */}
+      {isExpanded && hasResult && (
+        <div className="ml-8 mt-1 mb-2 p-3 rounded-lg bg-muted/30 border border-border/50">
+          <pre
+            className={cn(
+              "whitespace-pre-wrap font-mono text-xs break-all max-h-40 overflow-y-auto",
+              isFailed ? "text-red-400" : "text-muted-foreground",
+            )}
+          >
+            {toolCall.result?.error || toolCall.result?.output || "(无输出)"}
+          </pre>
+        </div>
+      )}
     </div>
   );
 };
@@ -533,15 +680,20 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
 
 interface ToolCallListProps {
   toolCalls: ToolCallState[];
+  /** 文件点击回调 - 用于打开右边栏显示文件内容 */
+  onFileClick?: (fileName: string, content: string) => void;
 }
 
-export const ToolCallList: React.FC<ToolCallListProps> = ({ toolCalls }) => {
+export const ToolCallList: React.FC<ToolCallListProps> = ({
+  toolCalls,
+  onFileClick,
+}) => {
   if (!toolCalls || toolCalls.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1">
       {toolCalls.map((tc) => (
-        <ToolCallDisplay key={tc.id} toolCall={tc} />
+        <ToolCallDisplay key={tc.id} toolCall={tc} onFileClick={onFileClick} />
       ))}
     </div>
   );

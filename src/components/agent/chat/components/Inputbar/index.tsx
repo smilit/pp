@@ -12,18 +12,27 @@ interface InputbarProps {
     webSearch?: boolean,
     thinking?: boolean,
   ) => void;
+  /** 停止生成回调 */
+  onStop?: () => void;
   isLoading: boolean;
   disabled?: boolean;
   onClearMessages?: () => void;
+  /** 切换画布显示 */
+  onToggleCanvas?: () => void;
+  /** 画布是否打开 */
+  isCanvasOpen?: boolean;
 }
 
 export const Inputbar: React.FC<InputbarProps> = ({
   input,
   setInput,
   onSend,
+  onStop,
   isLoading,
   disabled,
   onClearMessages,
+  onToggleCanvas: _onToggleCanvas,
+  isCanvasOpen: _isCanvasOpen,
 }) => {
   const [activeTools, setActiveTools] = useState<Record<string, boolean>>({});
   const [pendingImages, setPendingImages] = useState<MessageImage[]>([]);
@@ -204,6 +213,7 @@ export const Inputbar: React.FC<InputbarProps> = ({
         text={input}
         setText={setInput}
         onSend={handleSend}
+        onStop={onStop}
         isLoading={isLoading}
         disabled={disabled}
         onToolClick={handleToolClick}

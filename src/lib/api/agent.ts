@@ -351,6 +351,50 @@ export async function deleteAgentSession(sessionId: string): Promise<void> {
   });
 }
 
+/**
+ * Agent 消息内容类型
+ */
+export type AgentMessageContent =
+  | string
+  | Array<
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string; detail?: string } }
+    >;
+
+/**
+ * 工具调用
+ */
+export interface AgentToolCall {
+  id: string;
+  type: string;
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+/**
+ * Agent 消息
+ */
+export interface AgentMessage {
+  role: string;
+  content: AgentMessageContent;
+  timestamp: string;
+  tool_calls?: AgentToolCall[];
+  tool_call_id?: string;
+}
+
+/**
+ * 获取会话消息列表
+ */
+export async function getAgentSessionMessages(
+  sessionId: string,
+): Promise<AgentMessage[]> {
+  return await invoke("agent_get_session_messages", {
+    sessionId,
+  });
+}
+
 // ============================================================
 // Goose Agent API (基于 Goose 框架的完整 Agent 实现)
 // ============================================================

@@ -1015,6 +1015,7 @@ pub fn run() {
             commands::agent_cmd::agent_list_sessions,
             commands::agent_cmd::agent_get_session,
             commands::agent_cmd::agent_delete_session,
+            commands::agent_cmd::agent_get_session_messages,
             commands::agent_cmd::agent_terminal_command_response,
             commands::agent_cmd::agent_term_scrollback_response,
             // Native Agent commands

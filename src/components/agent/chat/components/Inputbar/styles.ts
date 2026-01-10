@@ -160,21 +160,25 @@ export const Divider = styled.div`
   margin: 0 4px;
 `;
 
-export const SendButton = styled.button`
+export const SendButton = styled.button<{ $isStop?: boolean }>`
   display: flex;
   align-items: center;
   justify-content: center;
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background-color: transparent;
-  color: hsl(var(--primary));
+  background-color: ${({ $isStop }) =>
+    $isStop ? "hsl(var(--destructive))" : "transparent"};
+  color: ${({ $isStop }) => ($isStop ? "white" : "hsl(var(--primary))")};
   border: none;
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover:not(:disabled) {
-    background-color: hsl(var(--primary-foreground));
+    background-color: ${({ $isStop }) =>
+      $isStop
+        ? "hsl(var(--destructive) / 0.9)"
+        : "hsl(var(--primary-foreground))"};
     transform: scale(1.05);
   }
 

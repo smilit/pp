@@ -48,7 +48,7 @@ const Toast = styled.div<{ $visible: boolean }>`
  * 文档画布主组件
  */
 export const DocumentCanvas: React.FC<DocumentCanvasProps> = memo(
-  ({ state, onStateChange, onClose }) => {
+  ({ state, onStateChange, onClose, isStreaming = false }) => {
     const [editingContent, setEditingContent] = useState("");
     const [toastMessage, setToastMessage] = useState("");
     const [showToast, setShowToast] = useState(false);
@@ -195,6 +195,7 @@ export const DocumentCanvas: React.FC<DocumentCanvasProps> = memo(
             <DocumentRenderer
               content={state.content}
               platform={state.platform}
+              isStreaming={isStreaming}
             />
           )}
         </ContentArea>

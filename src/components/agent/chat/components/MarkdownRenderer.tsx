@@ -7,7 +7,10 @@ import rehypeRaw from "rehype-raw";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import styled from "styled-components";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Loader2 } from "lucide-react";
+import { parseA2UIJson } from "@/components/content-creator/a2ui/parser";
+import { A2UIRenderer } from "@/components/content-creator/a2ui/components";
+import type { A2UIFormData } from "@/components/content-creator/a2ui/types";
 
 // Custom styles for markdown content to match Cherry Studio
 const MarkdownContainer = styled.div`
@@ -219,12 +222,49 @@ const CopyButton = styled.button`
   }
 `;
 
+// A2UI 加载状态样式
+const A2UILoadingContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary) / 0.05) 0%,
+    hsl(var(--primary) / 0.1) 100%
+  );
+  border: 1px solid hsl(var(--primary) / 0.2);
+  border-radius: 12px;
+  margin: 12px 0;
+`;
+
+const A2UILoadingSpinner = styled.div`
+  animation: spin 1s linear infinite;
+  color: hsl(var(--primary));
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`;
+
+const A2UILoadingText = styled.span`
+  font-size: 14px;
+  color: hsl(var(--muted-foreground));
+`;
+
 interface MarkdownRendererProps {
   content: string;
+  /** A2UI 表单提交回调 */
+  onA2UISubmit?: (formData: A2UIFormData) => void;
 }
 
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
-  ({ content }) => {
+  ({ content, onA2UISubmit }) => {
     const [copied, setCopied] = React.useState<string | null>(null);
 
     const handleCopy = (code: string) => {
@@ -340,6 +380,75 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeRaw, rehypeKatex]}
             components={{
+              // 使用 pre 组件来处理代码块，以便更好地控制 a2ui 的渲染
+              pre({ children, ...props }: any) {
+                // ReactMarkdown 传递的 children 是一个 React 元素
+                // 需要通过 React.Children 来正确访问
+                const child = React.Children.toArray(
+                  children,
+                )[0] as React.ReactElement;
+                if (!child || !React.isValidElement(child)) {
+                  return <pre {...props}>{children}</pre>;
+                }
+
+                const childProps = child.props as any;
+                const className = childProps?.className || "";
+                const match = /language-(\w+)/.exec(className);
+                const language = match ? match[1] : "";
+
+                // 调试：输出检测到的语言
+                if (language) {
+                  console.log(
+                    "[MarkdownRenderer] pre 组件检测到语言:",
+                    language,
+                  );
+                }
+
+                // 如果是 a2ui 代码块，特殊处理
+                if (language === "a2ui") {
+                  // 获取代码内容 - children 可能是字符串或数组
+                  const codeChildren = childProps?.children;
+                  const codeContent = String(
+                    Array.isArray(codeChildren)
+                      ? codeChildren.join("")
+                      : codeChildren || "",
+                  ).replace(/\n$/, "");
+
+                  console.log(
+                    "[MarkdownRenderer] a2ui 代码块内容长度:",
+                    codeContent.length,
+                  );
+                  const parsed = parseA2UIJson(codeContent);
+
+                  if (parsed) {
+                    console.log("[MarkdownRenderer] a2ui 解析成功，渲染表单");
+                    // 解析成功，直接渲染 A2UI 组件（不包裹在 pre 中）
+                    return (
+                      <A2UIRenderer
+                        response={parsed}
+                        onSubmit={onA2UISubmit}
+                        className="my-3"
+                      />
+                    );
+                  } else {
+                    console.log(
+                      "[MarkdownRenderer] a2ui 解析失败，显示加载状态",
+                    );
+                    // 解析失败（可能是流式输出中，JSON 还不完整）
+                    return (
+                      <A2UILoadingContainer>
+                        <A2UILoadingSpinner>
+                          <Loader2 size={20} />
+                        </A2UILoadingSpinner>
+                        <A2UILoadingText>表单加载中...</A2UILoadingText>
+                      </A2UILoadingContainer>
+                    );
+                  }
+                }
+
+                // 其他代码块正常渲染
+                return <pre {...props}>{children}</pre>;
+              },
               code({ inline, className, children, ...props }: any) {
                 const match = /language-(\w+)/.exec(className || "");
                 const codeContent = String(children).replace(/\n$/, "");
@@ -352,6 +461,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = memo(
                       {children}
                     </code>
                   );
+                }
+
+                // a2ui 已在 pre 组件中处理，这里跳过
+                if (language === "a2ui") {
+                  return null;
                 }
 
                 // Block code
