@@ -1,3 +1,7 @@
+// Import mock invoke directly - Vite alias will replace @tauri-apps/api/core
+// with the mock module in web mode
+import { invoke as baseInvoke } from "@tauri-apps/api/core";
+
 // Safe Tauri invoke wrapper for web mode compatibility
 const safeInvoke = async (cmd: string, args?: any): Promise<any> => {
   // Check if Tauri is available via window.__TAURI__
@@ -13,15 +17,8 @@ const safeInvoke = async (cmd: string, args?: any): Promise<any> => {
     return (window as any).__TAURI__.invoke(cmd, args);
   }
 
-  // Try to use real Tauri API (dynamic import)
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    return invoke(cmd, args);
-  } catch (_e) {
-    // Not in Tauri environment, return mock data for development
-    console.warn(`[useTauri] Tauri API not available for command: ${cmd}`);
-    throw new Error(`Tauri API not available. Command: ${cmd}`);
-  }
+  // Not in Tauri environment - use the imported invoke (mock in web mode)
+  return baseInvoke(cmd, args);
 };
 
 export interface ServerStatus {

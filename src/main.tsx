@@ -3,7 +3,7 @@ import { RootRouter } from "./RootRouter";
 import "./index.css";
 
 // Initialize Tauri mock for web mode
-import "./lib/tauri-mock";
+import "./lib/tauri-mock/index";
 
 // Initialize i18n configuration
 import "./i18n/config";
