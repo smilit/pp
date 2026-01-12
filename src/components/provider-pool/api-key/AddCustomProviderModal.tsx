@@ -40,6 +40,7 @@ const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: "openai", label: "OpenAI 兼容" },
   { value: "openai-response", label: "OpenAI Responses API" },
   { value: "anthropic", label: "Anthropic" },
+  { value: "anthropic-compatible", label: "Anthropic 兼容" },
   { value: "gemini", label: "Gemini" },
   { value: "azure-openai", label: "Azure OpenAI" },
   { value: "vertexai", label: "VertexAI" },
@@ -54,6 +55,7 @@ const PROVIDER_TYPE_EXTRA_FIELDS: Record<ProviderType, string[]> = {
   openai: [],
   "openai-response": [],
   anthropic: [],
+  "anthropic-compatible": [], // Anthropic 兼容格式，无需额外字段
   gemini: [],
   "azure-openai": ["apiVersion"],
   vertexai: ["project", "location"],

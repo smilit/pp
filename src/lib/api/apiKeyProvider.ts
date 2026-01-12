@@ -31,6 +31,8 @@ export interface AddCustomProviderRequest {
  */
 export interface UpdateProviderRequest {
   name?: string;
+  /** Provider 类型（仅自定义 Provider 可修改） */
+  type?: string;
   api_host?: string;
   enabled?: boolean;
   sort_order?: number;

@@ -114,7 +114,8 @@ export const providerTypeToIcon: Record<string, string> = {
   antigravity: "antigravity",
   openai: "openai",
   claude: "claude",
-  anthropic: "anthropic",
+  anthropic: "claude",
+  "anthropic-compatible": "claude", // Anthropic 兼容格式使用 Claude 图标
   codex: "openai",
   claude_oauth: "claude",
   iflow: "alibaba",

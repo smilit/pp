@@ -22,6 +22,7 @@ const getRegistryIdFromType = (providerType: string): string => {
   const typeMap: Record<string, string> = {
     openai: "openai",
     anthropic: "anthropic",
+    "anthropic-compatible": "anthropic", // Anthropic 兼容格式使用 Anthropic 模型列表
     gemini: "google",
     "azure-openai": "openai",
     vertexai: "google",

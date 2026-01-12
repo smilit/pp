@@ -703,14 +703,15 @@ mod unit_tests {
                 &ctx.db,
                 &provider.id,
                 Some("Updated Name".to_string()),
-                None,
-                Some(false),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
+                None,        // provider_type
+                None,        // api_host
+                Some(false), // enabled
+                None,        // sort_order
+                None,        // api_version
+                None,        // project
+                None,        // location
+                None,        // region
+                None,        // custom_models
             )
             .expect("Failed to update provider");
 

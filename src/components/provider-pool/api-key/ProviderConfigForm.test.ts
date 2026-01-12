@@ -51,6 +51,7 @@ const EXPECTED_EXTRA_FIELDS: Record<ProviderType, string[]> = {
   openai: [],
   "openai-response": [],
   anthropic: [],
+  "anthropic-compatible": [],
   gemini: [],
   "azure-openai": ["apiVersion"],
   vertexai: ["project", "location"],

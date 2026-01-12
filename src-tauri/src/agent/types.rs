@@ -15,6 +15,8 @@ pub enum ProviderType {
     Claude,
     /// Claude OAuth (Anthropic 协议)
     ClaudeOauth,
+    /// Anthropic 兼容格式（支持 system 数组格式等变体）
+    AnthropicCompatible,
     /// Kiro/CodeWhisperer (AWS Event Stream 协议)
     Kiro,
     /// Gemini (Gemini 协议)
@@ -38,6 +40,7 @@ impl ProviderType {
         match s.to_lowercase().as_str() {
             "claude" | "anthropic" => Self::Claude,
             "claude_oauth" => Self::ClaudeOauth,
+            "anthropic_compatible" | "anthropic-compatible" => Self::AnthropicCompatible,
             "kiro" => Self::Kiro,
             "gemini" | "gemini_api_key" => Self::Gemini,
             "openai" => Self::OpenAI,
@@ -52,7 +55,7 @@ impl ProviderType {
     /// 获取 API 端点路径
     pub fn endpoint(&self) -> &'static str {
         match self {
-            Self::Claude | Self::ClaudeOauth => "/v1/messages",
+            Self::Claude | Self::ClaudeOauth | Self::AnthropicCompatible => "/v1/messages",
             Self::Kiro => "/v1/chat/completions", // Kiro 使用 OpenAI 兼容格式，但后端会转换
             Self::Gemini => "/v1/gemini/chat/completions",
             _ => "/v1/chat/completions",
@@ -61,7 +64,15 @@ impl ProviderType {
 
     /// 是否使用 Anthropic 协议
     pub fn is_anthropic(&self) -> bool {
-        matches!(self, Self::Claude | Self::ClaudeOauth)
+        matches!(
+            self,
+            Self::Claude | Self::ClaudeOauth | Self::AnthropicCompatible
+        )
+    }
+
+    /// 是否使用 Anthropic 兼容格式（system 为数组格式）
+    pub fn uses_array_system_format(&self) -> bool {
+        matches!(self, Self::AnthropicCompatible)
     }
 
     /// 是否使用 OpenAI 兼容协议

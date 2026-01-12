@@ -664,13 +664,24 @@ pub fn convert_openai_to_antigravity_with_context(
         safety_settings: Some(default_safety_settings()),
     };
 
+    // 确定 requestType（配额类型）
+    // - "agent": 默认类型，用于普通对话和工具调用
+    // - "web_search": 联网搜索请求
+    // - "image_gen": 图片生成请求
+    let request_type = if is_image_generation_model(actual_model) {
+        "image_gen"
+    } else {
+        "agent"
+    };
+
     // 构建完整的 Antigravity 请求体
     let result = serde_json::json!({
         "project": project_id,
         "requestId": generate_request_id(),
         "request": inner,
         "model": actual_model,
-        "userAgent": "antigravity"
+        "userAgent": "antigravity",
+        "requestType": request_type
     });
 
     eprintln!(
@@ -1076,7 +1087,8 @@ pub fn convert_image_request_to_antigravity(
             "safetySettings": safety_settings
         },
         "model": actual_model,
-        "userAgent": "antigravity"
+        "userAgent": "antigravity",
+        "requestType": "image_gen"
     })
 }
 

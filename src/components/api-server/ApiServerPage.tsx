@@ -366,6 +366,7 @@ export function ApiServerPage() {
     const typeIconMap: Record<string, string> = {
       openai: "openai",
       anthropic: "claude",
+      "anthropic-compatible": "claude",
       gemini: "gemini",
       "azure-openai": "openai",
       vertexai: "gemini",

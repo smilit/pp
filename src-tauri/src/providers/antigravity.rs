@@ -858,7 +858,7 @@ impl AntigravityProvider {
             .post(&url)
             .header("Authorization", format!("Bearer {token}"))
             .header("Content-Type", "application/json")
-            .header("User-Agent", "antigravity/1.11.5 windows/amd64")
+            .header("User-Agent", "antigravity/1.11.9 windows/amd64")
             .json(body)
             .send()
             .await
@@ -2172,7 +2172,7 @@ impl StreamingProvider for AntigravityProvider {
                 .header("Authorization", format!("Bearer {}", token))
                 .header("Content-Type", "application/json")
                 .header("Accept", "text/event-stream")
-                .header("User-Agent", "antigravity/1.11.5 windows/amd64")
+                .header("User-Agent", "antigravity/1.11.9 windows/amd64")
                 .json(&payload)
                 .send()
                 .await;

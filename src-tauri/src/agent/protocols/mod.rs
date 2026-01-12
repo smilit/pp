@@ -62,9 +62,13 @@ pub trait Protocol: Send + Sync {
 /// 根据 ProviderType 创建协议处理器
 pub fn create_protocol(provider_type: ProviderType) -> Box<dyn Protocol> {
     match provider_type {
-        // Claude 和 Kiro 都使用 Anthropic SSE 协议
+        // Claude 和 Kiro 使用标准 Anthropic SSE 协议
         ProviderType::Claude | ProviderType::ClaudeOauth | ProviderType::Kiro => {
-            Box::new(AnthropicProtocol)
+            Box::new(AnthropicProtocol::new())
+        }
+        // Anthropic 兼容格式（system 为数组格式）
+        ProviderType::AnthropicCompatible => {
+            Box::new(AnthropicProtocol::with_array_system_format())
         }
         // 其他使用 OpenAI 兼容协议
         _ => Box::new(OpenAIProtocol),

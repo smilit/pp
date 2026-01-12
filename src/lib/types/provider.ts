@@ -19,6 +19,7 @@ export type ProviderType =
   | "openai" // 标准 OpenAI Chat Completions API
   | "openai-response" // OpenAI Responses API (支持 Reasoning)
   | "anthropic" // Anthropic Messages API
+  | "anthropic-compatible" // Anthropic 兼容格式 (system 为数组格式)
   | "gemini" // Google Gemini API
   | "azure-openai" // Azure OpenAI API
   | "vertexai" // Google Vertex AI API

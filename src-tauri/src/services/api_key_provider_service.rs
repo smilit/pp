@@ -259,6 +259,7 @@ impl ApiKeyProviderService {
         db: &DbConnection,
         id: &str,
         name: Option<String>,
+        provider_type: Option<ApiProviderType>,
         api_host: Option<String>,
         enabled: Option<bool>,
         sort_order: Option<i32>,
@@ -276,6 +277,13 @@ impl ApiKeyProviderService {
         // 更新字段
         if let Some(n) = name {
             provider.name = n;
+        }
+        // 只有自定义 Provider 才能修改类型
+        if let Some(t) = provider_type {
+            if provider.is_system {
+                return Err("系统 Provider 不允许修改类型".to_string());
+            }
+            provider.provider_type = t;
         }
         if let Some(h) = api_host {
             provider.api_host = h;

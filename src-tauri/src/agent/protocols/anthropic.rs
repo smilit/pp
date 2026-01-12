@@ -41,9 +41,40 @@ struct AnthropicTool {
 }
 
 /// Anthropic 协议处理器
-pub struct AnthropicProtocol;
+pub struct AnthropicProtocol {
+    /// 是否使用数组格式的 system 字段
+    /// 标准 Anthropic: system: "prompt"
+    /// 兼容格式: system: [{"type": "text", "text": "prompt"}]
+    use_array_system_format: bool,
+}
 
 impl AnthropicProtocol {
+    /// 创建标准 Anthropic 协议处理器
+    pub fn new() -> Self {
+        Self {
+            use_array_system_format: false,
+        }
+    }
+
+    /// 创建兼容格式的 Anthropic 协议处理器
+    pub fn with_array_system_format() -> Self {
+        Self {
+            use_array_system_format: true,
+        }
+    }
+
+    /// 构建 system 字段
+    fn build_system_field(&self, prompt: &str) -> serde_json::Value {
+        if self.use_array_system_format {
+            serde_json::json!([{
+                "type": "text",
+                "text": prompt
+            }])
+        } else {
+            serde_json::json!(prompt)
+        }
+    }
+
     /// 将 OpenAI Tool 转换为 Anthropic Tool
     fn convert_tools(tools: Option<&[Tool]>) -> Option<Vec<AnthropicTool>> {
         tools.map(|t| {
@@ -170,6 +201,7 @@ impl AnthropicProtocol {
 
     /// 构建消息列表
     fn build_messages(
+        &self,
         history: &[AgentMessage],
         user_message: &str,
         images: Option<&[ImageData]>,
@@ -178,7 +210,10 @@ impl AnthropicProtocol {
         let mut messages = Vec::new();
 
         // 系统提示词（Anthropic 使用单独的 system 字段）
-        let system_prompt = config.system_prompt.as_ref().map(|s| serde_json::json!(s));
+        let system_prompt = config
+            .system_prompt
+            .as_ref()
+            .map(|s| self.build_system_field(s));
 
         // 添加历史消息（跳过 system 消息）
         for msg in history {
@@ -220,13 +255,17 @@ impl AnthropicProtocol {
 
     /// 从历史构建消息（不添加新用户消息）
     fn build_messages_from_history(
+        &self,
         history: &[AgentMessage],
         config: &AgentConfig,
     ) -> (Vec<AnthropicMessage>, Option<serde_json::Value>) {
         let mut messages = Vec::new();
 
         // 系统提示词
-        let system_prompt = config.system_prompt.as_ref().map(|s| serde_json::json!(s));
+        let system_prompt = config
+            .system_prompt
+            .as_ref()
+            .map(|s| self.build_system_field(s));
 
         // 添加所有历史消息（跳过 system）
         for msg in history {
@@ -386,7 +425,7 @@ impl Protocol for AnthropicProtocol {
         );
 
         let (anthropic_messages, system) =
-            Self::build_messages(messages, user_message, images, config);
+            self.build_messages(messages, user_message, images, config);
 
         let anthropic_tools = Self::convert_tools(tools);
 
@@ -454,7 +493,7 @@ impl Protocol for AnthropicProtocol {
             provider_id
         );
 
-        let (anthropic_messages, system) = Self::build_messages_from_history(messages, config);
+        let (anthropic_messages, system) = self.build_messages_from_history(messages, config);
 
         let anthropic_tools = Self::convert_tools(tools);
 

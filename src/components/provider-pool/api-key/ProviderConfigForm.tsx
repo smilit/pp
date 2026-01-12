@@ -11,6 +11,13 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   ProviderWithKeysDisplay,
   UpdateProviderRequest,
@@ -24,11 +31,27 @@ import type { ProviderType } from "@/lib/types/provider";
 /** 防抖延迟时间（毫秒） */
 const DEBOUNCE_DELAY = 500;
 
+/** 支持的 Provider 类型列表 */
+const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
+  { value: "openai", label: "OpenAI 兼容" },
+  { value: "openai-response", label: "OpenAI Responses API" },
+  { value: "anthropic", label: "Anthropic" },
+  { value: "anthropic-compatible", label: "Anthropic 兼容" },
+  { value: "gemini", label: "Gemini" },
+  { value: "azure-openai", label: "Azure OpenAI" },
+  { value: "vertexai", label: "VertexAI" },
+  { value: "aws-bedrock", label: "AWS Bedrock" },
+  { value: "ollama", label: "Ollama" },
+  { value: "new-api", label: "New API" },
+  { value: "gateway", label: "Vercel AI Gateway" },
+];
+
 /** Provider 类型对应的额外字段配置 */
 const PROVIDER_TYPE_FIELDS: Record<ProviderType, string[]> = {
   openai: [],
   "openai-response": [],
   anthropic: [],
+  "anthropic-compatible": [], // Anthropic 兼容格式，无需额外字段
   gemini: [],
   "azure-openai": ["apiVersion"],
   vertexai: ["project", "location"],
@@ -81,6 +104,7 @@ export interface ProviderConfigFormProps {
 }
 
 interface FormState {
+  providerType: ProviderType;
   apiHost: string;
   apiVersion: string;
   project: string;
@@ -121,6 +145,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigFormProps> = ({
 }) => {
   // 表单状态
   const [formState, setFormState] = useState<FormState>({
+    providerType: (provider.type as ProviderType) || "openai",
     apiHost: provider.api_host || "",
     apiVersion: provider.api_version || "",
     project: provider.project || "",
@@ -140,6 +165,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigFormProps> = ({
   // 当 provider 变化时，重置表单状态
   useEffect(() => {
     setFormState({
+      providerType: (provider.type as ProviderType) || "openai",
       apiHost: provider.api_host || "",
       apiVersion: provider.api_version || "",
       project: provider.project || "",
@@ -150,6 +176,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigFormProps> = ({
     setSaveError(null);
   }, [
     provider.id,
+    provider.type,
     provider.api_host,
     provider.api_version,
     provider.project,
@@ -174,6 +201,8 @@ export const ProviderConfigForm: React.FC<ProviderConfigFormProps> = ({
           .filter((m) => m.length > 0);
 
         const request: UpdateProviderRequest = {
+          // 只有自定义 Provider 才发送 type 字段
+          type: !provider.is_system ? state.providerType : undefined,
           api_host: state.apiHost || undefined,
           api_version: state.apiVersion || undefined,
           project: state.project || undefined,
@@ -190,7 +219,7 @@ export const ProviderConfigForm: React.FC<ProviderConfigFormProps> = ({
         setIsSaving(false);
       }
     },
-    [provider.id, onUpdate],
+    [provider.id, provider.is_system, onUpdate],
   );
 
   // 防抖保存
@@ -224,8 +253,8 @@ export const ProviderConfigForm: React.FC<ProviderConfigFormProps> = ({
   };
 
   // 获取当前 Provider 类型需要显示的额外字段
-  const providerType = provider.type as ProviderType;
-  const extraFields = PROVIDER_TYPE_FIELDS[providerType] || [];
+  // 使用 formState 中的 providerType，这样修改类型后会立即更新显示的字段
+  const extraFields = PROVIDER_TYPE_FIELDS[formState.providerType] || [];
 
   // 格式化最后保存时间
   const formatLastSaved = (date: Date | null): string => {
@@ -238,6 +267,36 @@ export const ProviderConfigForm: React.FC<ProviderConfigFormProps> = ({
       className={cn("space-y-4", className)}
       data-testid="provider-config-form"
     >
+      {/* Provider 类型选择器（仅自定义 Provider 显示） */}
+      {!provider.is_system && (
+        <div className="space-y-1.5">
+          <Label htmlFor="provider-type" className="text-sm font-medium">
+            Provider 类型
+          </Label>
+          <Select
+            value={formState.providerType}
+            onValueChange={(value) =>
+              handleFieldChange("providerType", value as ProviderType)
+            }
+            disabled={loading || isSaving}
+          >
+            <SelectTrigger data-testid="provider-type-select">
+              <SelectValue placeholder="选择 Provider 类型" />
+            </SelectTrigger>
+            <SelectContent>
+              {PROVIDER_TYPES.map((type) => (
+                <SelectItem key={type.value} value={type.value}>
+                  {type.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            选择 API 协议类型，不同类型使用不同的请求格式
+          </p>
+        </div>
+      )}
+
       {/* API Host 字段（所有 Provider 都有） */}
       <div className="space-y-1.5">
         <Label htmlFor="api-host" className="text-sm font-medium">

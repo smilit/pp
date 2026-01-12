@@ -38,6 +38,9 @@ pub struct AddCustomProviderRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateProviderRequest {
     pub name: Option<String>,
+    /// Provider 类型（仅自定义 Provider 可修改）
+    #[serde(rename = "type")]
+    pub provider_type: Option<String>,
     pub api_host: Option<String>,
     pub enabled: Option<bool>,
     pub sort_order: Option<i32>,
@@ -241,10 +244,18 @@ pub fn update_api_key_provider(
     id: String,
     request: UpdateProviderRequest,
 ) -> Result<ProviderDisplay, String> {
+    // 解析 provider_type（如果提供）
+    let provider_type: Option<ApiProviderType> = request
+        .provider_type
+        .map(|t| t.parse())
+        .transpose()
+        .map_err(|e: String| format!("无效的 Provider 类型: {}", e))?;
+
     let provider = service.0.update_provider(
         &db,
         &id,
         request.name,
+        provider_type,
         request.api_host,
         request.enabled,
         request.sort_order,

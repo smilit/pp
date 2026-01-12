@@ -58,6 +58,7 @@ const PROVIDER_ID_TO_REGISTRY_ID: Record<string, string> = {
  */
 const PROVIDER_TYPE_TO_REGISTRY_ID: Record<string, string> = {
   anthropic: "anthropic",
+  "anthropic-compatible": "anthropic", // Anthropic 兼容格式
   openai: "openai",
   "openai-response": "openai",
   gemini: "google",
