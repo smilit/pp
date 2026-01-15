@@ -78,8 +78,7 @@ window-vibrancy = "0.7.1"
 if-addrs = "0.13"
 
 # Aster Agent Framework
-# 使用本地路径进行开发，后续切换到 git
-aster = { path = "../../../astercloud/aster-rust/crates/aster" }
+aster = { git = "https://github.com/astercloud/aster-rust", branch = "main" }
 
 # Platform specific dependencies for browser interceptor
 

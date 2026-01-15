@@ -61,11 +61,12 @@
       "resources/models/**/*"
     ],
     "macOS": {
-      "entitlements": null,
+      "entitlements": "entitlements.plist",
       "exceptionDomain": null,
       "frameworks": [],
       "providerShortName": null,
-      "signingIdentity": null
+      "signingIdentity": "-",
+      "minimumSystemVersion": "10.15"
     }
   },
   "plugins": {
