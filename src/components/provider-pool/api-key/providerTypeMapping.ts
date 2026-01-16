@@ -20,38 +20,60 @@ const PROVIDER_ID_TO_REGISTRY_ID: Record<string, string> = {
   // 主流 AI
   openai: "openai",
   anthropic: "anthropic",
-  gemini: "gemini",
+  google: "google", // Gemini
   deepseek: "deepseek",
-  moonshot: "moonshot",
+  moonshotai: "moonshotai",
   groq: "groq",
-  grok: "grok",
+  xai: "xai", // Grok
   mistral: "mistral",
   perplexity: "perplexity",
   cohere: "cohere",
   // 国内 AI
-  zhipu: "zhipu",
+  zhipuai: "zhipuai",
   baichuan: "baichuan",
-  dashscope: "dashscope",
+  alibaba: "alibaba", // 百炼/通义千问
   doubao: "doubao",
   minimax: "minimax",
   stepfun: "stepfun",
-  lingyi: "lingyi",
-  baidu: "baidu",
+  yi: "yi", // 零一万物
+  "baidu-cloud": "baidu-cloud",
   hunyuan: "hunyuan",
-  spark: "spark",
+  xiaomi: "xiaomi", // 小米 MiMo
   // 云服务
   "azure-openai": "openai",
-  vertexai: "google",
-  "aws-bedrock": "anthropic",
+  "google-vertex": "google-vertex",
+  "amazon-bedrock": "amazon-bedrock",
+  "github-models": "github-models",
+  "github-copilot": "github-copilot",
+  // API 聚合服务
+  siliconflow: "siliconflow",
+  "siliconflow-cn": "siliconflow-cn",
+  openrouter: "openrouter",
+  togetherai: "togetherai",
+  "fireworks-ai": "fireworks-ai",
+  aihubmix: "aihubmix",
+  "302ai": "302ai",
   // 代理服务
-  iflow: "deepseek", // iFlow 是 DeepSeek 的代理
-  antigravity: "antigravity", // Antigravity 使用自己的模型列表
-  codex: "codex", // Codex 使用自己的模型列表
-  // 其他
+  iflow: "deepseek",
+  antigravity: "antigravity",
+  codex: "codex",
+  // 本地服务
   ollama: "ollama",
-  together: "together",
-  fireworks: "fireworks",
-  replicate: "replicate",
+  lmstudio: "lmstudio",
+  // 兼容旧 ID（向后兼容）
+  gemini: "google",
+  zhipu: "zhipuai",
+  dashscope: "alibaba",
+  moonshot: "moonshotai",
+  grok: "xai",
+  github: "github-models",
+  copilot: "github-copilot",
+  vertexai: "google-vertex",
+  "aws-bedrock": "amazon-bedrock",
+  together: "togetherai",
+  fireworks: "fireworks-ai",
+  mimo: "xiaomi",
+  silicon: "siliconflow",
 };
 
 /**

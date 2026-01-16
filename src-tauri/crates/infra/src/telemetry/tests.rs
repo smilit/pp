@@ -2,12 +2,12 @@
 //!
 //! 使用 proptest 进行属性测试
 
-use crate::telemetry::{
+use super::{
     LogRotationConfig, RequestLog, RequestLogger, RequestStatus, StatsAggregator, TimeRange,
 };
-use crate::ProviderType;
 use chrono::{Duration, Utc};
 use proptest::prelude::*;
+use proxycast_core::ProviderType;
 use std::collections::HashSet;
 
 /// 生成随机的 ProviderType

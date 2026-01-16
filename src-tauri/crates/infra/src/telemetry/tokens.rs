@@ -4,9 +4,9 @@
 
 #![allow(dead_code)]
 
-use crate::ProviderType;
 use chrono::{DateTime, Duration, Utc};
 use parking_lot::RwLock;
+use proxycast_core::ProviderType;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 

@@ -44,7 +44,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "gemini",
+            id: "google",
             name: "Gemini",
             provider_type: ApiProviderType::Gemini,
             api_host: "https://generativelanguage.googleapis.com",
@@ -62,7 +62,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "moonshot",
+            id: "moonshotai",
             name: "Moonshot",
             provider_type: ApiProviderType::Openai,
             api_host: "https://api.moonshot.cn",
@@ -80,7 +80,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "grok",
+            id: "xai",
             name: "Grok (xAI)",
             provider_type: ApiProviderType::Openai,
             api_host: "https://api.x.ai",
@@ -119,7 +119,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
         // 国内 AI (15个) - Requirements 3.2
         // =========================================================================
         SystemProviderDef {
-            id: "zhipu",
+            id: "zhipuai",
             name: "智谱 (ZhiPu)",
             provider_type: ApiProviderType::Openai,
             api_host: "https://open.bigmodel.cn/api/paas/v4/",
@@ -137,7 +137,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "dashscope",
+            id: "alibaba",
             name: "百炼/通义千问 (Dashscope)",
             provider_type: ApiProviderType::Openai,
             api_host: "https://dashscope.aliyuncs.com/compatible-mode/v1/",
@@ -236,7 +236,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "mimo",
+            id: "xiaomi",
             name: "小米 MiMo",
             provider_type: ApiProviderType::Openai,
             api_host: "https://api.xiaomimimo.com",
@@ -266,7 +266,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: Some("2024-02-15-preview"),
         },
         SystemProviderDef {
-            id: "vertexai",
+            id: "google-vertex",
             name: "VertexAI",
             provider_type: ApiProviderType::Vertexai,
             api_host: "",
@@ -275,7 +275,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "aws-bedrock",
+            id: "amazon-bedrock",
             name: "AWS Bedrock",
             provider_type: ApiProviderType::AwsBedrock,
             api_host: "",
@@ -284,7 +284,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "github",
+            id: "github-models",
             name: "Github Models",
             provider_type: ApiProviderType::Openai,
             api_host: "https://models.github.ai/inference",
@@ -293,7 +293,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "copilot",
+            id: "github-copilot",
             name: "Github Copilot",
             provider_type: ApiProviderType::Openai,
             api_host: "https://api.githubcopilot.com/",
@@ -305,12 +305,21 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
         // API 聚合/中转服务 (25个) - Requirements 3.4
         // =========================================================================
         SystemProviderDef {
-            id: "silicon",
+            id: "siliconflow",
             name: "Silicon Flow",
             provider_type: ApiProviderType::Openai,
             api_host: "https://api.siliconflow.cn",
             group: ProviderGroup::Aggregator,
             sort_order: 31,
+            api_version: None,
+        },
+        SystemProviderDef {
+            id: "siliconflow-cn",
+            name: "Silicon Flow (国内)",
+            provider_type: ApiProviderType::Openai,
+            api_host: "https://api.siliconflow.cn",
+            group: ProviderGroup::Aggregator,
+            sort_order: 32,
             api_version: None,
         },
         SystemProviderDef {
@@ -341,7 +350,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "together",
+            id: "togetherai",
             name: "Together",
             provider_type: ApiProviderType::Openai,
             api_host: "https://api.together.xyz",
@@ -350,7 +359,7 @@ pub fn get_system_providers() -> Vec<SystemProviderDef> {
             api_version: None,
         },
         SystemProviderDef {
-            id: "fireworks",
+            id: "fireworks-ai",
             name: "Fireworks",
             provider_type: ApiProviderType::Openai,
             api_host: "https://api.fireworks.ai/inference",

@@ -5,7 +5,7 @@
 use crate::models::model_registry::{
     EnhancedModelMetadata, ModelSyncState, ModelTier, ProviderAliasConfig, UserModelPreference,
 };
-use crate::services::model_registry_service::ModelRegistryService;
+use crate::services::model_registry_service::{FetchModelsResult, ModelRegistryService};
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
@@ -179,4 +179,75 @@ pub async fn refresh_model_registry(state: State<'_, ModelRegistryState>) -> Res
         .ok_or_else(|| "模型注册服务未初始化".to_string())?;
 
     service.force_reload().await
+}
+
+/// 从 Provider API 获取模型列表
+///
+/// 调用 Provider 的 /v1/models 端点获取模型列表，
+/// 如果失败则回退到本地 JSON 文件
+///
+/// # 参数
+/// - `provider_id`: Provider ID（如 "siliconflow", "openai"）
+/// - `api_host`: API 主机地址
+/// - `api_key`: API Key
+#[tauri::command]
+pub async fn fetch_provider_models_from_api(
+    state: State<'_, ModelRegistryState>,
+    provider_id: String,
+    api_host: String,
+    api_key: String,
+) -> Result<FetchModelsResult, String> {
+    let guard = state.read().await;
+    let service = guard
+        .as_ref()
+        .ok_or_else(|| "模型注册服务未初始化".to_string())?;
+
+    service
+        .fetch_models_from_api(&provider_id, &api_host, &api_key)
+        .await
+}
+
+/// 从 Provider API 获取模型列表（自动获取 API Key）
+///
+/// 自动从数据库获取 Provider 的 API Key，然后调用 /v1/models 端点
+///
+/// # 参数
+/// - `provider_id`: Provider ID（如 "siliconflow", "openai"）
+#[tauri::command]
+pub async fn fetch_provider_models_auto(
+    state: State<'_, ModelRegistryState>,
+    db: tauri::State<'_, crate::database::DbConnection>,
+    api_key_service: tauri::State<
+        '_,
+        crate::commands::api_key_provider_cmd::ApiKeyProviderServiceState,
+    >,
+    provider_id: String,
+) -> Result<FetchModelsResult, String> {
+    // 获取 Provider 信息
+    let provider = api_key_service
+        .0
+        .get_provider(&db, &provider_id)?
+        .ok_or_else(|| format!("Provider 不存在: {}", provider_id))?;
+
+    // 获取 API Key
+    let api_key = api_key_service
+        .0
+        .get_next_api_key(&db, &provider_id)?
+        .ok_or_else(|| format!("Provider {} 没有可用的 API Key", provider_id))?;
+
+    // 获取 API Host
+    let api_host = provider.provider.api_host.clone();
+    if api_host.is_empty() {
+        return Err("Provider 没有配置 API Host".to_string());
+    }
+
+    // 调用模型注册服务
+    let guard = state.read().await;
+    let service = guard
+        .as_ref()
+        .ok_or_else(|| "模型注册服务未初始化".to_string())?;
+
+    service
+        .fetch_models_from_api(&provider_id, &api_host, &api_key)
+        .await
 }

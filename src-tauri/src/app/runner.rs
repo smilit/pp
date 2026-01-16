@@ -1160,6 +1160,8 @@ pub fn run() {
             commands::model_registry_cmd::get_models_by_tier,
             commands::model_registry_cmd::get_provider_alias_config,
             commands::model_registry_cmd::get_all_alias_configs,
+            commands::model_registry_cmd::fetch_provider_models_from_api,
+            commands::model_registry_cmd::fetch_provider_models_auto,
             // Model Management commands (动态模型列表)
             commands::model_cmd::get_credential_models,
             commands::model_cmd::refresh_credential_models,

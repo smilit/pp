@@ -31,6 +31,23 @@ pub fn init_database() -> Result<DbConnection, String> {
     schema::create_tables(&conn).map_err(|e| e.to_string())?;
     migration::migrate_from_json(&conn)?;
 
+    // 执行 Provider ID 迁移（修复旧 ID 与模型注册表不匹配的问题）
+    match migration::migrate_provider_ids(&conn) {
+        Ok(count) => {
+            if count > 0 {
+                tracing::info!("[数据库] 已迁移 {} 个 Provider ID", count);
+                // 标记需要刷新模型注册表
+                migration::mark_model_registry_refresh_needed(&conn);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("[数据库] Provider ID 迁移失败（非致命）: {}", e);
+        }
+    }
+
+    // 检查是否需要刷新模型注册表（版本升级时）
+    migration::check_model_registry_version(&conn);
+
     // 执行 API Keys 到 Provider Pool 的迁移
     match migration::migrate_api_keys_to_pool(&conn) {
         Ok(count) => {

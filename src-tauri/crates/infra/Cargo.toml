@@ -1,14 +1,23 @@
 [package]
-name = "proxycast-core"
+name = "proxycast-infra"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+# 项目内 crate
+proxycast-core.workspace = true
+
 # 序列化
 serde.workspace = true
 serde_json.workspace = true
+
+# 异步运行时
+tokio.workspace = true
+
+# 错误处理
+thiserror.workspace = true
 
 # 日志
 tracing.workspace = true
@@ -17,11 +26,14 @@ tracing.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 
+# HTTP 客户端
+reqwest.workspace = true
+
 # 工具库
-indexmap.workspace = true
 parking_lot.workspace = true
+dashmap.workspace = true
 dirs.workspace = true
-sha2.workspace = true
+tiktoken-rs.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

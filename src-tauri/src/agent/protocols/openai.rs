@@ -170,14 +170,24 @@ impl OpenAIProtocol {
             match chunk {
                 Ok(bytes) => {
                     let text = String::from_utf8_lossy(&bytes);
+                    // 安全截断：使用 char_indices 找到有效的 UTF-8 字符边界
+                    let truncated = if text.len() > 200 {
+                        let mut end = 200;
+                        for (i, _) in text.char_indices() {
+                            if i <= 200 {
+                                end = i;
+                            } else {
+                                break;
+                            }
+                        }
+                        format!("{}...", &text[..end])
+                    } else {
+                        text.to_string()
+                    };
                     eprintln!(
                         "[OpenAIProtocol] 收到 chunk: {} bytes, 内容: {}",
                         bytes.len(),
-                        if text.len() > 200 {
-                            format!("{}...", &text[..200])
-                        } else {
-                            text.to_string()
-                        }
+                        truncated
                     );
                     buffer.push_str(&text);
 

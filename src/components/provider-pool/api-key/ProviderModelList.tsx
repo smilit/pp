@@ -1,15 +1,32 @@
 /**
  * @file ProviderModelList 组件
- * @description 显示 Provider 支持的模型列表
+ * @description 显示 Provider 支持的模型列表，支持从 API 刷新
  * @module components/provider-pool/api-key/ProviderModelList
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useModelRegistry } from "@/hooks/useModelRegistry";
-import { Eye, Wrench, Brain, Sparkles, Loader2 } from "lucide-react";
+import {
+  Eye,
+  Wrench,
+  Brain,
+  Sparkles,
+  Loader2,
+  RefreshCw,
+  Cloud,
+  HardDrive,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { EnhancedModelMetadata } from "@/lib/types/modelRegistry";
 import { mapProviderIdToRegistryId } from "./providerTypeMapping";
+import { invoke } from "@tauri-apps/api/core";
 
 // ============================================================================
 // 类型定义
@@ -20,10 +37,22 @@ export interface ProviderModelListProps {
   providerId: string;
   /** Provider 类型（API 协议），如 "anthropic", "openai", "gemini" */
   providerType: string;
+  /** 是否有可用的 API Key（用于显示刷新按钮） */
+  hasApiKey?: boolean;
   /** 额外的 CSS 类名 */
   className?: string;
   /** 最大显示数量，默认显示全部 */
   maxItems?: number;
+}
+
+// ============================================================================
+// API 响应类型
+// ============================================================================
+
+interface FetchModelsResult {
+  models: EnhancedModelMetadata[];
+  source: "Api" | "LocalFallback";
+  error: string | null;
 }
 
 // ============================================================================
@@ -103,6 +132,7 @@ const ModelItem: React.FC<ModelItemProps> = ({ model }) => {
 export const ProviderModelList: React.FC<ProviderModelListProps> = ({
   providerId,
   providerType,
+  hasApiKey = false,
   className,
   maxItems,
 }) => {
@@ -118,18 +148,60 @@ export const ProviderModelList: React.FC<ProviderModelListProps> = ({
     providerFilter: [registryProviderId],
   });
 
+  // 从 API 刷新状态
+  const [refreshing, setRefreshing] = useState(false);
+  const [apiModels, setApiModels] = useState<EnhancedModelMetadata[] | null>(
+    null,
+  );
+  const [apiSource, setApiSource] = useState<"Api" | "LocalFallback" | null>(
+    null,
+  );
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  // 从 API 获取模型列表（自动获取 API Key）
+  const handleRefreshFromApi = useCallback(async () => {
+    setRefreshing(true);
+    setApiError(null);
+
+    try {
+      const result = await invoke<FetchModelsResult>(
+        "fetch_provider_models_auto",
+        {
+          providerId,
+        },
+      );
+
+      if (result && result.models) {
+        setApiModels(result.models);
+        setApiSource(result.source);
+        if (result.error) {
+          setApiError(result.error);
+        }
+      } else {
+        setApiError("返回结果格式错误");
+      }
+    } catch (err) {
+      setApiError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [providerId]);
+
+  // 使用 API 模型或本地模型
+  const displayModelsSource = apiModels ?? models;
+
   // 限制显示数量
   const displayModels = useMemo(() => {
     if (maxItems && maxItems > 0) {
-      return models.slice(0, maxItems);
+      return displayModelsSource.slice(0, maxItems);
     }
-    return models;
-  }, [models, maxItems]);
+    return displayModelsSource;
+  }, [displayModelsSource, maxItems]);
 
-  const hasMore = maxItems && models.length > maxItems;
+  const hasMore = maxItems && displayModelsSource.length > maxItems;
 
   // 加载状态
-  if (loading) {
+  if (loading && !apiModels) {
     return (
       <div
         className={cn(
@@ -145,7 +217,7 @@ export const ProviderModelList: React.FC<ProviderModelListProps> = ({
   }
 
   // 错误状态
-  if (error) {
+  if (error && !apiModels) {
     return (
       <div
         className={cn("py-4 text-center text-sm text-red-500", className)}
@@ -157,16 +229,57 @@ export const ProviderModelList: React.FC<ProviderModelListProps> = ({
   }
 
   // 空状态
-  if (models.length === 0) {
+  if (displayModelsSource.length === 0) {
     return (
-      <div
-        className={cn(
-          "py-4 text-center text-sm text-muted-foreground",
-          className,
+      <div className={cn("space-y-2", className)}>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            支持的模型
+          </h4>
+          {hasApiKey && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRefreshFromApi}
+                    disabled={refreshing}
+                    className="h-7 px-2"
+                  >
+                    {refreshing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>从 API 获取模型列表</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+        <div
+          className="py-4 text-center text-sm text-muted-foreground"
+          data-testid="provider-model-list-empty"
+        >
+          暂无模型数据
+          {hasApiKey && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefreshFromApi}
+              disabled={refreshing}
+              className="ml-1 h-auto p-0 text-primary underline-offset-4 hover:underline"
+            >
+              点击从 API 获取
+            </Button>
+          )}
+        </div>
+        {apiError && (
+          <div className="text-xs text-amber-500 text-center">{apiError}</div>
         )}
-        data-testid="provider-model-list-empty"
-      >
-        暂无模型数据
       </div>
     );
   }
@@ -182,10 +295,72 @@ export const ProviderModelList: React.FC<ProviderModelListProps> = ({
           <Sparkles className="h-4 w-4 text-muted-foreground" />
           支持的模型
           <span className="text-xs text-muted-foreground font-normal">
-            ({models.length})
+            ({displayModelsSource.length})
           </span>
+          {/* 数据来源标识 */}
+          {apiSource && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded",
+                      apiSource === "Api"
+                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+                    )}
+                  >
+                    {apiSource === "Api" ? (
+                      <>
+                        <Cloud className="h-3 w-3" />
+                        API
+                      </>
+                    ) : (
+                      <>
+                        <HardDrive className="h-3 w-3" />
+                        本地
+                      </>
+                    )}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {apiSource === "Api"
+                    ? "数据来自 Provider API"
+                    : "API 获取失败，使用本地数据"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </h4>
+        {/* 刷新按钮 */}
+        {hasApiKey && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRefreshFromApi}
+                  disabled={refreshing}
+                  className="h-7 px-2"
+                >
+                  {refreshing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>从 API 获取最新模型列表</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
+
+      {/* API 错误提示 */}
+      {apiError && (
+        <div className="text-xs text-amber-500 mb-2 px-1">{apiError}</div>
+      )}
 
       {/* 模型列表 */}
       <div className="border rounded-md divide-y divide-border">
@@ -197,7 +372,7 @@ export const ProviderModelList: React.FC<ProviderModelListProps> = ({
       {/* 显示更多提示 */}
       {hasMore && (
         <p className="text-xs text-muted-foreground text-center pt-2">
-          还有 {models.length - maxItems!} 个模型未显示
+          还有 {displayModelsSource.length - maxItems!} 个模型未显示
         </p>
       )}
     </div>

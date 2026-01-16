@@ -2,8 +2,8 @@
 //!
 //! 定义请求日志、统计数据等核心类型
 
-use crate::ProviderType;
 use chrono::{DateTime, Utc};
+use proxycast_core::ProviderType;
 use serde::{Deserialize, Serialize};
 
 /// 请求状态

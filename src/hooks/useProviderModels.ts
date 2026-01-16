@@ -4,7 +4,8 @@
  * @module hooks/useProviderModels
  */
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useModelRegistry } from "./useModelRegistry";
 import { useAliasConfig } from "./useAliasConfig";
 import { isAliasProvider } from "@/lib/constants/providerMappings";
@@ -33,6 +34,13 @@ export interface UseProviderModelsResult {
   /** 是否正在加载 */
   loading: boolean;
   /** 加载错误 */
+  error: string | null;
+}
+
+// API 获取模型结果类型
+interface FetchModelsResult {
+  models: EnhancedModelMetadata[];
+  source: "Api" | "LocalFallback";
   error: string | null;
 }
 
@@ -157,6 +165,7 @@ function convertAliasModelsToMetadata(
  * 获取 Provider 的模型列表
  *
  * 根据 Provider 类型，从别名配置或模型注册表获取模型列表。
+ * 如果本地没有模型，会尝试从 Provider API 获取。
  * 支持返回模型 ID 列表或完整的模型元数据。
  *
  * @param selectedProvider 当前选中的 Provider
@@ -191,10 +200,15 @@ export function useProviderModels(
   const { aliasConfig, loading: aliasLoading } =
     useAliasConfig(selectedProvider);
 
-  // 计算模型列表
-  const result = useMemo(() => {
+  // API 获取的模型缓存
+  const [apiModels, setApiModels] = useState<EnhancedModelMetadata[]>([]);
+  const [apiLoading, setApiLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  // 计算本地模型列表
+  const localResult = useMemo(() => {
     if (!selectedProvider) {
-      return { modelIds: [], models: [] };
+      return { modelIds: [], models: [], hasLocalModels: false };
     }
 
     // 收集所有模型
@@ -236,16 +250,6 @@ export function useProviderModels(
       (m) => m.provider_id === selectedProvider.registryId,
     );
 
-    // 如果没有找到模型，尝试使用 fallbackRegistryId
-    if (
-      registryFilteredModels.length === 0 &&
-      selectedProvider.fallbackRegistryId
-    ) {
-      registryFilteredModels = registryModels.filter(
-        (m) => m.provider_id === selectedProvider.fallbackRegistryId,
-      );
-    }
-
     // 过滤掉已存在的模型（避免重复）
     const newRegistryModels = registryFilteredModels.filter(
       (m) => !allModelIds.includes(m.id),
@@ -257,20 +261,139 @@ export function useProviderModels(
     allModels = [...allModels, ...sortedRegistryModels];
     allModelIds = [...allModelIds, ...sortedRegistryModels.map((m) => m.id)];
 
+    // 判断是否有本地模型（不包括自定义模型）
+    const hasLocalModels =
+      sortedRegistryModels.length > 0 ||
+      (isAliasProvider(selectedProvider.key) &&
+        aliasConfig &&
+        aliasConfig.models.length > 0);
+
     return {
       modelIds: allModelIds,
-      models: returnFullMetadata ? allModels : [],
+      models: allModels,
+      hasLocalModels,
     };
-  }, [selectedProvider, registryModels, aliasConfig, returnFullMetadata]);
+  }, [selectedProvider, registryModels, aliasConfig]);
+
+  // 当本地没有模型时，从 API 获取
+  useEffect(() => {
+    if (!selectedProvider) {
+      setApiModels([]);
+      return;
+    }
+
+    // 如果是别名 Provider，不从 API 获取
+    if (isAliasProvider(selectedProvider.key)) {
+      return;
+    }
+
+    // 如果本地有模型，不需要从 API 获取
+    if (localResult.hasLocalModels) {
+      setApiModels([]);
+      return;
+    }
+
+    // 如果还在加载本地数据，等待
+    if (registryLoading || aliasLoading) {
+      return;
+    }
+
+    // 从 API 获取模型
+    const fetchFromApi = async () => {
+      setApiLoading(true);
+      setApiError(null);
+
+      try {
+        const result = await invoke<FetchModelsResult>(
+          "fetch_provider_models_auto",
+          { providerId: selectedProvider.key },
+        );
+
+        if (result && result.models && result.models.length > 0) {
+          setApiModels(result.models);
+        } else {
+          // API 没有返回模型，尝试 fallback
+          if (selectedProvider.fallbackRegistryId) {
+            const fallbackModels = registryModels.filter(
+              (m) => m.provider_id === selectedProvider.fallbackRegistryId,
+            );
+            if (fallbackModels.length > 0) {
+              setApiModels(sortModels(fallbackModels));
+            }
+          }
+        }
+      } catch (err) {
+        setApiError(err instanceof Error ? err.message : String(err));
+
+        // API 失败，尝试 fallback
+        if (selectedProvider.fallbackRegistryId) {
+          const fallbackModels = registryModels.filter(
+            (m) => m.provider_id === selectedProvider.fallbackRegistryId,
+          );
+          if (fallbackModels.length > 0) {
+            setApiModels(sortModels(fallbackModels));
+          }
+        }
+      } finally {
+        setApiLoading(false);
+      }
+    };
+
+    fetchFromApi();
+  }, [
+    selectedProvider,
+    localResult.hasLocalModels,
+    registryLoading,
+    aliasLoading,
+    registryModels,
+  ]);
+
+  // 合并本地模型和 API 模型
+  const finalResult = useMemo(() => {
+    // 如果有本地模型，使用本地模型
+    if (localResult.hasLocalModels || localResult.models.length > 0) {
+      return {
+        modelIds: localResult.modelIds,
+        models: returnFullMetadata ? localResult.models : [],
+      };
+    }
+
+    // 否则使用 API 模型
+    if (apiModels.length > 0) {
+      // 合并自定义模型和 API 模型
+      const customModels = selectedProvider?.customModels || [];
+      const customModelMetadata =
+        customModels.length > 0
+          ? convertCustomModelsToMetadata(
+              customModels,
+              selectedProvider!.key,
+              selectedProvider!.label,
+            )
+          : [];
+
+      const allModels = [...customModelMetadata, ...apiModels];
+      const allModelIds = allModels.map((m) => m.id);
+
+      return {
+        modelIds: allModelIds,
+        models: returnFullMetadata ? allModels : [],
+      };
+    }
+
+    return {
+      modelIds: localResult.modelIds,
+      models: returnFullMetadata ? localResult.models : [],
+    };
+  }, [localResult, apiModels, returnFullMetadata, selectedProvider]);
 
   // 计算加载状态
-  const loading = registryLoading || aliasLoading;
+  const loading = registryLoading || aliasLoading || apiLoading;
 
   // 计算错误状态
-  const error = registryError || null;
+  const error = registryError || apiError || null;
 
   return {
-    ...result,
+    ...finalResult,
     loading,
     error,
   };

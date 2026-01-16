@@ -196,6 +196,24 @@ export const TerminalAIModeSelector: React.FC<TerminalAIModeSelectorProps> = ({
       return hookModels;
     }
 
+    // 自定义 API Key Provider（非系统预设）直接使用 hook 结果
+    // 判断依据：providerId 不在系统预设列表中
+    const systemProviders = [
+      "kiro",
+      "codex",
+      "gemini",
+      "gemini_api_key",
+      "antigravity",
+      "qwen",
+      "claude",
+      "claude_oauth",
+      "openai",
+      "iflow",
+    ];
+    if (!systemProviders.includes(selectedProvider.key.toLowerCase())) {
+      return hookModels;
+    }
+
     // 优先使用凭证池中的模型列表（从后端 extract_supported_models 逻辑）
     const credentialModels = extractSupportedModels(
       selectedProvider.type,

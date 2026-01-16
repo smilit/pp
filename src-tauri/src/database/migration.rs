@@ -268,6 +268,138 @@ struct ApiKeyMigrationRow {
     provider_name: String,
 }
 
+/// 迁移旧的 Provider ID 到新的 ID
+///
+/// 修复 system_providers.rs 中 Provider ID 与模型注册表 JSON 文件名不匹配的问题。
+/// 例如：silicon -> siliconflow, gemini -> google 等
+pub fn migrate_provider_ids(conn: &Connection) -> Result<usize, String> {
+    // 检查是否已经迁移过
+    let migrated: bool = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'migrated_provider_ids_v1'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    if migrated {
+        tracing::debug!("[迁移] Provider ID 已迁移过，跳过");
+        return Ok(0);
+    }
+
+    tracing::info!("[迁移] 开始迁移旧的 Provider ID");
+
+    // 定义需要迁移的 ID 映射（旧 ID -> 新 ID）
+    let id_mappings = [
+        ("silicon", "siliconflow"),
+        ("gemini", "google"),
+        ("zhipu", "zhipuai"),
+        ("dashscope", "alibaba"),
+        ("moonshot", "moonshotai"),
+        ("grok", "xai"),
+        ("github", "github-models"),
+        ("copilot", "github-copilot"),
+        ("vertexai", "google-vertex"),
+        ("aws-bedrock", "amazon-bedrock"),
+        ("together", "togetherai"),
+        ("fireworks", "fireworks-ai"),
+        ("mimo", "xiaomi"),
+    ];
+
+    let mut migrated_count = 0;
+
+    for (old_id, new_id) in &id_mappings {
+        // 检查旧 ID 是否存在
+        let old_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM api_key_providers WHERE id = ?1",
+                params![old_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+
+        if !old_exists {
+            continue;
+        }
+
+        // 检查新 ID 是否存在
+        let new_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM api_key_providers WHERE id = ?1",
+                params![new_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+
+        // 检查旧 ID 是否有 API Keys
+        let has_keys: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM api_keys WHERE provider_id = ?1",
+                params![old_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+
+        if has_keys {
+            // 如果旧 ID 有 API Keys，需要迁移到新 ID
+            if new_exists {
+                // 新 ID 已存在，将 API Keys 迁移过去
+                conn.execute(
+                    "UPDATE api_keys SET provider_id = ?1 WHERE provider_id = ?2",
+                    params![new_id, old_id],
+                )
+                .map_err(|e| format!("迁移 API Keys 失败: {}", e))?;
+
+                tracing::info!("[迁移] 已将 {} 的 API Keys 迁移到 {}", old_id, new_id);
+            } else {
+                // 新 ID 不存在，直接更新旧 ID
+                conn.execute(
+                    "UPDATE api_key_providers SET id = ?1 WHERE id = ?2",
+                    params![new_id, old_id],
+                )
+                .map_err(|e| format!("更新 Provider ID 失败: {}", e))?;
+
+                conn.execute(
+                    "UPDATE api_keys SET provider_id = ?1 WHERE provider_id = ?2",
+                    params![new_id, old_id],
+                )
+                .map_err(|e| format!("更新 API Keys provider_id 失败: {}", e))?;
+
+                tracing::info!("[迁移] 已将 Provider {} 重命名为 {}", old_id, new_id);
+                migrated_count += 1;
+                continue;
+            }
+        }
+
+        // 删除旧的 Provider（无论是否有 API Keys，因为 Keys 已迁移）
+        conn.execute(
+            "DELETE FROM api_key_providers WHERE id = ?1",
+            params![old_id],
+        )
+        .map_err(|e| format!("删除旧 Provider 失败: {}", e))?;
+
+        tracing::info!("[迁移] 已删除旧 Provider: {}", old_id);
+        migrated_count += 1;
+    }
+
+    // 标记迁移完成
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('migrated_provider_ids_v1', 'true')",
+        [],
+    )
+    .map_err(|e| format!("标记迁移完成失败: {}", e))?;
+
+    if migrated_count > 0 {
+        tracing::info!(
+            "[迁移] Provider ID 迁移完成，共处理 {} 个 Provider",
+            migrated_count
+        );
+    }
+
+    Ok(migrated_count)
+}
+
 /// 清理旧的 API Key 凭证（OpenAIKey 和 ClaudeKey 类型）
 ///
 /// 这些凭证是通过旧的 UI 添加的，现在已经被新的 API Key Provider 系统取代。
@@ -363,4 +495,62 @@ pub fn cleanup_legacy_api_key_credentials(conn: &Connection) -> Result<usize, St
     tracing::info!("[清理] 旧 API Key 凭证清理完成，共删除 {} 条记录", deleted);
 
     Ok(deleted)
+}
+
+/// 当前模型注册表版本
+/// 每次更新模型数据结构或添加新 Provider 时，增加此版本号
+const MODEL_REGISTRY_VERSION: &str = "2026.01.16.1";
+
+/// 标记需要刷新模型注册表
+pub fn mark_model_registry_refresh_needed(conn: &Connection) {
+    let _ = conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('model_registry_refresh_needed', 'true')",
+        [],
+    );
+    tracing::info!("[迁移] 已标记需要刷新模型注册表");
+}
+
+/// 检查模型注册表版本，如果版本不匹配则标记需要刷新
+pub fn check_model_registry_version(conn: &Connection) {
+    let current_version: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'model_registry_version'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if current_version.as_deref() != Some(MODEL_REGISTRY_VERSION) {
+        tracing::info!(
+            "[迁移] 模型注册表版本不匹配: {:?} -> {}，标记需要刷新",
+            current_version,
+            MODEL_REGISTRY_VERSION
+        );
+        mark_model_registry_refresh_needed(conn);
+
+        // 更新版本号
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('model_registry_version', ?1)",
+            params![MODEL_REGISTRY_VERSION],
+        );
+    }
+}
+
+/// 检查是否需要刷新模型注册表
+pub fn is_model_registry_refresh_needed(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'model_registry_refresh_needed'",
+        [],
+        |row| row.get::<_, String>(0),
+    )
+    .map(|v| v == "true")
+    .unwrap_or(false)
+}
+
+/// 清除模型注册表刷新标记
+pub fn clear_model_registry_refresh_flag(conn: &Connection) {
+    let _ = conn.execute(
+        "DELETE FROM settings WHERE key = 'model_registry_refresh_needed'",
+        [],
+    );
 }

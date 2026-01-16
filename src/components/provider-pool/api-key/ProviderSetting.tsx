@@ -242,6 +242,9 @@ export const ProviderSetting: React.FC<ProviderSettingProps> = ({
           <ProviderModelList
             providerId={provider.id}
             providerType={provider.type}
+            hasApiKey={
+              (provider.api_keys?.filter((k) => k.enabled).length ?? 0) > 0
+            }
           />
         </section>
       </div>

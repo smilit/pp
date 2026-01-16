@@ -2,7 +2,7 @@
 //!
 //! 提供 Provider 故障转移和自动切换功能
 
-use crate::ProviderType;
+use proxycast_core::ProviderType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 

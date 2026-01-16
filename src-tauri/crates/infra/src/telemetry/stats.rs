@@ -2,12 +2,10 @@
 //!
 //! 提供请求统计的聚合、分组和查询功能
 
-use crate::telemetry::types::{
-    ModelStats, ProviderStats, RequestLog, RequestStatus, StatsSummary, TimeRange,
-};
-use crate::ProviderType;
+use super::types::{ModelStats, ProviderStats, RequestLog, RequestStatus, StatsSummary, TimeRange};
 use chrono::{Duration, Utc};
 use parking_lot::RwLock;
+use proxycast_core::ProviderType;
 use std::collections::{HashMap, VecDeque};
 
 /// 统计聚合器

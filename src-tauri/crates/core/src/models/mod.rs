@@ -1,0 +1,35 @@
+//! 数据模型模块
+//!
+//! 包含 ProxyCast 的所有核心数据模型定义。
+
+pub mod anthropic;
+pub mod app_type;
+pub mod codewhisperer;
+pub mod injection_types;
+pub mod kiro_fingerprint;
+pub mod machine_id;
+pub mod mcp_model;
+pub mod model_registry;
+pub mod openai;
+pub mod prompt_model;
+pub mod provider_model;
+pub mod provider_pool_model;
+pub mod provider_type;
+pub mod route_model;
+pub mod skill_model;
+
+#[allow(unused_imports)]
+pub use anthropic::*;
+pub use app_type::AppType;
+#[allow(unused_imports)]
+pub use codewhisperer::*;
+pub use injection_types::{InjectionMode, InjectionRule};
+pub use mcp_model::McpServer;
+#[allow(unused_imports)]
+pub use openai::*;
+pub use prompt_model::Prompt;
+pub use provider_model::Provider;
+#[allow(unused_imports)]
+pub use provider_pool_model::*;
+pub use provider_type::ProviderType;
+pub use skill_model::{Skill, SkillMetadata, SkillRepo, SkillState, SkillStates};

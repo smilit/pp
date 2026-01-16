@@ -1,8 +1,7 @@
 //! 核心类型定义
 //!
-//! 包含 Provider 类型枚举和相关实现。
+//! 包含应用状态类型和相关实现。
 
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::Runtime;
 use tokio::sync::RwLock;
@@ -12,73 +11,8 @@ use crate::server;
 use crate::services::token_cache_service::TokenCacheService;
 use crate::tray::TrayManager;
 
-/// Provider 类型枚举
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ProviderType {
-    Kiro,
-    Gemini,
-    #[serde(rename = "openai")]
-    OpenAI,
-    Claude,
-    Antigravity,
-    Vertex,
-    #[serde(rename = "gemini_api_key")]
-    GeminiApiKey,
-    Codex,
-    #[serde(rename = "claude_oauth")]
-    ClaudeOAuth,
-    // API Key Provider 类型
-    Anthropic,
-    #[serde(rename = "azure_openai")]
-    AzureOpenai,
-    #[serde(rename = "aws_bedrock")]
-    AwsBedrock,
-    Ollama,
-}
-
-impl std::fmt::Display for ProviderType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProviderType::Kiro => write!(f, "kiro"),
-            ProviderType::Gemini => write!(f, "gemini"),
-            ProviderType::OpenAI => write!(f, "openai"),
-            ProviderType::Claude => write!(f, "claude"),
-            ProviderType::Antigravity => write!(f, "antigravity"),
-            ProviderType::Vertex => write!(f, "vertex"),
-            ProviderType::GeminiApiKey => write!(f, "gemini_api_key"),
-            ProviderType::Codex => write!(f, "codex"),
-            ProviderType::ClaudeOAuth => write!(f, "claude_oauth"),
-            ProviderType::Anthropic => write!(f, "anthropic"),
-            ProviderType::AzureOpenai => write!(f, "azure_openai"),
-            ProviderType::AwsBedrock => write!(f, "aws_bedrock"),
-            ProviderType::Ollama => write!(f, "ollama"),
-        }
-    }
-}
-
-impl std::str::FromStr for ProviderType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "kiro" => Ok(ProviderType::Kiro),
-            "gemini" => Ok(ProviderType::Gemini),
-            "openai" => Ok(ProviderType::OpenAI),
-            "claude" => Ok(ProviderType::Claude),
-            "antigravity" => Ok(ProviderType::Antigravity),
-            "vertex" => Ok(ProviderType::Vertex),
-            "gemini_api_key" => Ok(ProviderType::GeminiApiKey),
-            "codex" => Ok(ProviderType::Codex),
-            "claude_oauth" => Ok(ProviderType::ClaudeOAuth),
-            "anthropic" => Ok(ProviderType::Anthropic),
-            "azure_openai" | "azure-openai" => Ok(ProviderType::AzureOpenai),
-            "aws_bedrock" | "aws-bedrock" => Ok(ProviderType::AwsBedrock),
-            "ollama" => Ok(ProviderType::Ollama),
-            _ => Err(format!("Invalid provider: {s}")),
-        }
-    }
-}
+// 重新导出 core crate 的 ProviderType
+pub use proxycast_core::ProviderType;
 
 /// 应用状态类型别名
 pub type AppState = Arc<RwLock<server::ServerState>>;

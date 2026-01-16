@@ -9,7 +9,7 @@ use crate::models::model_registry::{
     ModelSyncState, ModelTier, ProviderAliasConfig, UserModelPreference,
 };
 use rusqlite::params;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -218,6 +218,11 @@ impl ModelRegistryService {
             match std::fs::read_to_string(&provider_file) {
                 Ok(content) => match serde_json::from_str::<RepoProviderData>(&content) {
                     Ok(provider_data) => {
+                        tracing::info!(
+                            "[ModelRegistry] 加载 Provider: {} ({} 个模型)",
+                            provider_id,
+                            provider_data.models.len()
+                        );
                         for model in provider_data.models {
                             let enhanced = self.convert_repo_model(
                                 model,
@@ -810,4 +815,215 @@ impl ModelRegistryService {
     pub async fn get_all_alias_configs(&self) -> HashMap<String, ProviderAliasConfig> {
         self.aliases_cache.read().await.clone()
     }
+
+    // ========== 从 Provider API 获取模型 ==========
+
+    /// 从 Provider API 获取模型列表
+    ///
+    /// 调用 Provider 的 /v1/models 端点获取模型列表，
+    /// 如果失败则回退到本地 JSON 文件
+    ///
+    /// # 参数
+    /// - `provider_id`: Provider ID（如 "siliconflow", "openai"）
+    /// - `api_host`: API 主机地址
+    /// - `api_key`: API Key
+    ///
+    /// # 返回
+    /// - `Ok(FetchModelsResult)`: 获取结果，包含模型列表和来源
+    pub async fn fetch_models_from_api(
+        &self,
+        provider_id: &str,
+        api_host: &str,
+        api_key: &str,
+    ) -> Result<FetchModelsResult, String> {
+        tracing::info!(
+            "[ModelRegistry] 从 API 获取模型: provider={}, host={}",
+            provider_id,
+            api_host
+        );
+
+        // 构建 API URL
+        let api_url = Self::build_models_api_url(api_host);
+        tracing::info!("[ModelRegistry] API URL: {}", api_url);
+
+        // 尝试从 API 获取
+        match self.call_models_api(&api_url, api_key).await {
+            Ok(api_models) => {
+                tracing::info!("[ModelRegistry] 从 API 获取到 {} 个模型", api_models.len());
+
+                // 转换为内部格式
+                let now = chrono::Utc::now().timestamp();
+                let models: Vec<EnhancedModelMetadata> = api_models
+                    .into_iter()
+                    .map(|m| self.convert_api_model(m, provider_id, now))
+                    .collect();
+
+                Ok(FetchModelsResult {
+                    models,
+                    source: ModelFetchSource::Api,
+                    error: None,
+                })
+            }
+            Err(api_error) => {
+                tracing::warn!(
+                    "[ModelRegistry] API 获取失败: {}, 回退到本地文件",
+                    api_error
+                );
+
+                // 回退到本地 JSON 文件
+                let local_models = self.get_models_by_provider(provider_id).await;
+
+                if local_models.is_empty() {
+                    Ok(FetchModelsResult {
+                        models: vec![],
+                        source: ModelFetchSource::LocalFallback,
+                        error: Some(format!("API 获取失败: {}, 本地也无数据", api_error)),
+                    })
+                } else {
+                    Ok(FetchModelsResult {
+                        models: local_models,
+                        source: ModelFetchSource::LocalFallback,
+                        error: Some(format!("API 获取失败: {}, 已使用本地数据", api_error)),
+                    })
+                }
+            }
+        }
+    }
+
+    /// 构建 /v1/models API URL
+    fn build_models_api_url(api_host: &str) -> String {
+        let host = api_host.trim_end_matches('/');
+
+        // 检查是否已经包含 /v1 路径
+        if host.ends_with("/v1") || host.ends_with("/v1/") {
+            format!("{}/models", host.trim_end_matches('/'))
+        } else if host.contains("/v1/") {
+            // 如果路径中间有 /v1/，直接追加 models
+            format!("{}models", host.trim_end_matches('/').to_string() + "/")
+        } else {
+            format!("{}/v1/models", host)
+        }
+    }
+
+    /// 调用 /v1/models API
+    async fn call_models_api(
+        &self,
+        url: &str,
+        api_key: &str,
+    ) -> Result<Vec<ApiModelResponse>, String> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+        let response = client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .map_err(|e| format!("请求失败: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "无法读取响应体".to_string());
+            return Err(format!("API 返回错误 {}: {}", status, body));
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| format!("读取响应失败: {}", e))?;
+
+        // 解析 OpenAI 格式的响应
+        let api_response: ApiModelsResponse =
+            serde_json::from_str(&body).map_err(|e| format!("解析响应失败: {}", e))?;
+
+        Ok(api_response.data)
+    }
+
+    /// 转换 API 模型格式为内部格式
+    fn convert_api_model(
+        &self,
+        model: ApiModelResponse,
+        provider_id: &str,
+        now: i64,
+    ) -> EnhancedModelMetadata {
+        // 从 model id 推断显示名称
+        let display_name = model.id.split('/').last().unwrap_or(&model.id).to_string();
+
+        EnhancedModelMetadata {
+            id: model.id.clone(),
+            display_name,
+            provider_id: provider_id.to_string(),
+            provider_name: model.owned_by.unwrap_or_else(|| provider_id.to_string()),
+            family: None,
+            tier: ModelTier::Pro,
+            capabilities: ModelCapabilities {
+                vision: false,
+                tools: false,
+                streaming: true,
+                json_mode: false,
+                function_calling: false,
+                reasoning: false,
+            },
+            pricing: None,
+            limits: ModelLimits {
+                context_length: model.context_length,
+                max_output_tokens: None,
+                requests_per_minute: None,
+                tokens_per_minute: None,
+            },
+            status: ModelStatus::Active,
+            release_date: None,
+            is_latest: false,
+            description: None,
+            source: ModelSource::Api,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+// ============================================================================
+// API 响应类型
+// ============================================================================
+
+/// OpenAI /v1/models API 响应格式
+#[derive(Debug, Deserialize)]
+struct ApiModelsResponse {
+    data: Vec<ApiModelResponse>,
+}
+
+/// 单个模型的 API 响应
+#[derive(Debug, Deserialize)]
+struct ApiModelResponse {
+    id: String,
+    #[serde(default)]
+    owned_by: Option<String>,
+    #[serde(default)]
+    context_length: Option<u32>,
+}
+
+/// 模型获取来源
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ModelFetchSource {
+    /// 从 API 获取
+    Api,
+    /// 从本地文件回退
+    LocalFallback,
+}
+
+/// 从 API 获取模型的结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FetchModelsResult {
+    /// 模型列表
+    pub models: Vec<EnhancedModelMetadata>,
+    /// 数据来源
+    pub source: ModelFetchSource,
+    /// 错误信息（如果有）
+    pub error: Option<String>,
 }

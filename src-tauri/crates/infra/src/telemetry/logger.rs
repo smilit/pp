@@ -2,12 +2,10 @@
 //!
 //! 提供请求日志记录、查询和轮转功能
 
-use crate::telemetry::types::{
-    ModelStats, ProviderStats, RequestLog, RequestStatus, StatsSummary, TimeRange,
-};
-use crate::ProviderType;
+use super::types::{ModelStats, ProviderStats, RequestLog, RequestStatus, StatsSummary, TimeRange};
 use chrono::{DateTime, Duration, Utc};
 use parking_lot::RwLock;
+use proxycast_core::ProviderType;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};

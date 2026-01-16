@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import * as Select from "@radix-ui/react-select";
+import { invoke } from "@tauri-apps/api/core";
 import { LogsTab } from "./LogsTab";
 import { RoutesTab } from "./RoutesTab";
 import { ProviderIcon } from "@/icons/providers";
@@ -39,6 +40,13 @@ import {
   getProviderAliasConfig,
 } from "@/lib/api/modelRegistry";
 import type { EnhancedModelMetadata } from "@/lib/types/modelRegistry";
+
+// API 获取模型结果类型
+interface FetchModelsResult {
+  models: EnhancedModelMetadata[];
+  source: "Api" | "LocalFallback";
+  error: string | null;
+}
 
 interface TestState {
   endpoint: string;
@@ -348,8 +356,25 @@ export function ApiServerPage() {
           }
 
           // 2. 添加模型注册表中的模型
-          // 优先使用 registryId，如果没有模型则回退到 fallbackRegistryId
+          // 优先使用 registryId，如果没有模型则尝试从 API 获取，最后才回退到 fallbackRegistryId
           let registryModels = await getModelsForProvider(registryId);
+
+          // 3. 如果本地模型注册表没有模型，优先尝试从 Provider API 获取
+          if (registryModels.length === 0) {
+            try {
+              const result = await invoke<FetchModelsResult>(
+                "fetch_provider_models_auto",
+                { providerId: provider },
+              );
+              if (result && result.models && result.models.length > 0) {
+                registryModels = result.models;
+              }
+            } catch {
+              // API 获取失败，继续尝试 fallback
+            }
+          }
+
+          // 4. 如果 API 也没有获取到模型，回退到 fallbackRegistryId
           if (
             registryModels.length === 0 &&
             fallbackRegistryId &&
