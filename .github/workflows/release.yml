@@ -111,7 +111,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-      - name: Build Tauri app
+      - name: Build Tauri app (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,8 +121,44 @@ jobs:
           CARGO_INCREMENTAL: 0
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: sccache
-          # Linux 使用系统 OpenSSL
-          OPENSSL_NO_VENDOR: ${{ matrix.platform == 'ubuntu-22.04' && '1' || '' }}
+          OPENSSL_NO_VENDOR: "1"
+        with:
+          tauriScript: npx tauri
+          tagName: ${{ github.event.inputs.version || github.ref_name }}
+          releaseName: 'ProxyCast ${{ github.event.inputs.version || github.ref_name }}'
+          releaseBody: |
+            ## ProxyCast Release
+
+            ### Features
+            - AI API 代理服务
+            - Kiro OAuth 凭证管理
+            - OpenAI/Anthropic 兼容 API
+            - 自动检测凭证文件变化
+            - 多 Provider 支持
+
+            ### Downloads
+            - **macOS (Apple Silicon)**: `proxycast_*_aarch64.dmg`
+            - **macOS (Intel)**: `proxycast_*_x64.dmg`
+            - **Windows (64-bit)**: `proxycast_*_x64-setup.exe`
+            - **Linux x64**: `proxycast_*_amd64.deb` / `proxycast_*_amd64.AppImage`
+
+            ### 默认配置
+            - **端口**: 8999
+            - **API Key**: 首次启动自动生成，可在设置页查看/修改
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+      - name: Build Tauri app (macOS/Windows)
+        if: matrix.platform != 'ubuntu-22.04'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_PROFILE_RELEASE_LTO: thin
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
+          CARGO_INCREMENTAL: 0
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: sccache
           # Apple 签名环境变量
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
