@@ -108,7 +108,7 @@ tauri = { version = "2.5", features = ["tray-icon", "image-png", "unstable", "ma
 tauri-build = { version = "2", features = [] }
 tauri-plugin-shell = "2.3"
 tauri-plugin-autostart = "2.3"
-tauri-plugin-dialog = "2.5"
+tauri-plugin-dialog = "2.5.0"
 tauri-plugin-single-instance = "2.3"
 tauri-plugin-global-shortcut = "2.3"
 
