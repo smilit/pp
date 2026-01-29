@@ -35,6 +35,7 @@ const DEBOUNCE_DELAY = 500;
 const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
   { value: "openai", label: "OpenAI 兼容" },
   { value: "openai-response", label: "OpenAI Responses API" },
+  { value: "codex", label: "Codex CLI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "anthropic-compatible", label: "Anthropic 兼容" },
   { value: "gemini", label: "Gemini" },
@@ -50,6 +51,7 @@ const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
 const PROVIDER_TYPE_FIELDS: Record<ProviderType, string[]> = {
   openai: [],
   "openai-response": [],
+  codex: [],
   anthropic: [],
   "anthropic-compatible": [], // Anthropic 兼容格式，无需额外字段
   gemini: [],

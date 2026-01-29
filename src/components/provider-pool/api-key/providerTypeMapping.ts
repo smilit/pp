@@ -85,6 +85,7 @@ const PROVIDER_TYPE_TO_REGISTRY_ID: Record<string, string> = {
   "anthropic-compatible": "anthropic", // Anthropic 兼容格式
   openai: "openai",
   "openai-response": "openai",
+  codex: "codex",
   gemini: "gemini",
 };
 
@@ -100,6 +101,11 @@ export function mapProviderIdToRegistryId(
   providerId: string,
   providerType?: string,
 ): string {
+  // Codex 协议优先走 codex 模型资源
+  if (providerType === "codex") {
+    return "codex";
+  }
+
   // 优先使用 Provider ID 映射
   if (PROVIDER_ID_TO_REGISTRY_ID[providerId]) {
     return PROVIDER_ID_TO_REGISTRY_ID[providerId];

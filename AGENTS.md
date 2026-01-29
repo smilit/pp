@@ -5,6 +5,30 @@
 ## 基本规则
 
 1. **始终使用中文输出** - 所有回复、注释、文档都使用中文
+2. **文件超过 20 行，分批输出** - 避免一次性输出过长内容
+3. **先读后写** - 修改文件前必须先读取现有内容
+
+## 详细文档
+
+模块级详细文档位于 `docs/aiprompts/`：
+
+| 文档 | 说明 |
+|------|------|
+| [overview.md](docs/aiprompts/overview.md) | 项目架构概览 |
+| [providers.md](docs/aiprompts/providers.md) | Provider 系统 |
+| [credential-pool.md](docs/aiprompts/credential-pool.md) | 凭证池管理 |
+| [converter.md](docs/aiprompts/converter.md) | 协议转换 |
+| [server.md](docs/aiprompts/server.md) | HTTP 服务器 |
+| [flow-monitor.md](docs/aiprompts/flow-monitor.md) | 流量监控 |
+| [components.md](docs/aiprompts/components.md) | 组件系统 |
+| [hooks.md](docs/aiprompts/hooks.md) | React Hooks |
+| [services.md](docs/aiprompts/services.md) | 业务服务 |
+| [commands.md](docs/aiprompts/commands.md) | Tauri 命令 |
+| [mcp.md](docs/aiprompts/mcp.md) | MCP 服务器 |
+| [database.md](docs/aiprompts/database.md) | 数据库层 |
+| [terminal.md](docs/aiprompts/terminal.md) | 内置终端 |
+| [plugins.md](docs/aiprompts/plugins.md) | 插件系统 |
+| [lib.md](docs/aiprompts/lib.md) | 工具库 |
 
 ## 构建命令
 

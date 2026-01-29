@@ -139,10 +139,26 @@ export const ApiKeyProviderSection = forwardRef<
         }
 
         // 如果 Provider 配置了自定义模型，使用第一个模型进行测试
-        const modelName =
+        let modelName =
           provider.custom_models && provider.custom_models.length > 0
             ? provider.custom_models[0]
             : undefined;
+
+        // 兜底：自定义模型可能还在防抖保存中（provider.custom_models 还未更新）
+        // 直接从输入框读取当前值，确保连接测试可用
+        if (!modelName) {
+          const input = document.getElementById(
+            "custom-models",
+          ) as HTMLInputElement | null;
+          const raw = input?.value ?? "";
+          const parsed = raw
+            .split(",")
+            .map((m) => m.trim())
+            .filter((m) => m.length > 0);
+          if (parsed.length > 0) {
+            modelName = parsed[0];
+          }
+        }
 
         // 调用后端连接测试 API
         const result = await apiKeyProviderApi.testConnection(
@@ -160,6 +176,53 @@ export const ApiKeyProviderSection = forwardRef<
         return {
           success: false,
           error: e instanceof Error ? e.message : "连接测试失败",
+        };
+      }
+    },
+    [selectedProvider],
+  );
+
+  const handleTestChat = useCallback(
+    async (providerId: string, prompt: string) => {
+      const provider = selectedProvider;
+      if (!provider || provider.api_keys.length === 0) {
+        return {
+          success: false,
+          error: "没有可用的 API Key",
+        };
+      }
+
+      let modelName =
+        provider.custom_models && provider.custom_models.length > 0
+          ? provider.custom_models[0]
+          : undefined;
+
+      if (!modelName) {
+        const input = document.getElementById(
+          "custom-models",
+        ) as HTMLInputElement | null;
+        const raw = input?.value ?? "";
+        const parsed = raw
+          .split(",")
+          .map((m) => m.trim())
+          .filter((m) => m.length > 0);
+        if (parsed.length > 0) {
+          modelName = parsed[0];
+        }
+      }
+
+      try {
+        return await apiKeyProviderApi.testChat(providerId, modelName, prompt);
+      } catch (e) {
+        const msg =
+          e instanceof Error
+            ? e.message
+            : typeof e === "string"
+              ? e
+              : JSON.stringify(e);
+        return {
+          success: false,
+          error: msg || "对话测试失败",
         };
       }
     },
@@ -209,6 +272,7 @@ export const ApiKeyProviderSection = forwardRef<
           onDeleteApiKey={deleteApiKey}
           onToggleApiKey={toggleApiKey}
           onTestConnection={handleTestConnection}
+          onTestChat={handleTestChat}
           onDeleteProvider={handleDeleteProviderClick}
           loading={loading}
           className="h-full"

@@ -7,10 +7,19 @@
  * **Validates: Requirements 4.1, 6.3, 6.4**
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Trash2 } from "lucide-react";
 import { ProviderIcon } from "@/icons/providers";
 import { ApiKeyList } from "./ApiKeyList";
@@ -21,6 +30,7 @@ import {
 } from "./ConnectionTestButton";
 import { ProviderModelList } from "./ProviderModelList";
 import type {
+  ChatTestResult,
   ProviderWithKeysDisplay,
   UpdateProviderRequest,
 } from "@/lib/api/apiKeyProvider";
@@ -46,6 +56,8 @@ export interface ProviderSettingProps {
   onToggleApiKey?: (keyId: string, enabled: boolean) => void;
   /** 测试连接回调 */
   onTestConnection?: (providerId: string) => Promise<ConnectionTestResult>;
+  /** 对话测试回调 */
+  onTestChat?: (providerId: string, prompt: string) => Promise<ChatTestResult>;
   /** 删除自定义 Provider 回调 */
   onDeleteProvider?: (providerId: string) => void;
   /** 是否正在加载 */
@@ -86,10 +98,39 @@ export const ProviderSetting: React.FC<ProviderSettingProps> = ({
   onDeleteApiKey,
   onToggleApiKey,
   onTestConnection,
+  onTestChat,
   onDeleteProvider,
   loading = false,
   className,
 }) => {
+  const [chatDialogOpen, setChatDialogOpen] = useState(false);
+  const [chatPrompt, setChatPrompt] = useState("hello");
+  const [chatTesting, setChatTesting] = useState(false);
+  const [chatResult, setChatResult] = useState<ChatTestResult | null>(null);
+
+  const handleChatTest = async () => {
+    if (!onTestChat || chatTesting || !provider) return;
+    setChatTesting(true);
+    setChatResult(null);
+    try {
+      const res = await onTestChat(provider.id, chatPrompt);
+      setChatResult(res);
+    } catch (e) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === "string"
+            ? e
+            : JSON.stringify(e);
+      setChatResult({
+        success: false,
+        error: msg || "对话测试失败",
+      });
+    } finally {
+      setChatTesting(false);
+    }
+  };
+
   // 空状态
   if (!provider) {
     return (
@@ -218,20 +259,98 @@ export const ProviderSetting: React.FC<ProviderSettingProps> = ({
         {/* 连接测试 */}
         <section data-testid="connection-test-section">
           <h4 className="text-sm font-medium text-foreground mb-3">连接测试</h4>
-          <ConnectionTestButton
-            providerId={provider.id}
-            onTest={onTestConnection}
-            disabled={
-              loading ||
-              !provider.enabled ||
-              (provider.api_keys?.length ?? 0) === 0
-            }
-          />
+          <div className="flex gap-2">
+            <ConnectionTestButton
+              providerId={provider.id}
+              onTest={onTestConnection}
+              disabled={
+                loading ||
+                !provider.enabled ||
+                (provider.api_keys?.length ?? 0) === 0
+              }
+              className="flex-1"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={
+                loading ||
+                !provider.enabled ||
+                (provider.api_keys?.length ?? 0) === 0 ||
+                !onTestChat
+              }
+              onClick={() => setChatDialogOpen(true)}
+            >
+              对话测试
+            </Button>
+          </div>
           {(provider.api_keys?.length ?? 0) === 0 && (
             <p className="text-xs text-muted-foreground mt-2">
               请先添加 API Key 后再进行连接测试
             </p>
           )}
+
+          <Dialog open={chatDialogOpen} onOpenChange={setChatDialogOpen}>
+            <DialogContent className="sm:max-w-[700px] p-6">
+              <DialogHeader className="mb-4">
+                <DialogTitle>对话测试</DialogTitle>
+                <DialogDescription>
+                  发送一条最小对话请求，直接查看返回内容或原始错误，便于排查模型/权限/路由问题。
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                <Textarea
+                  value={chatPrompt}
+                  onChange={(e) => setChatPrompt(e.target.value)}
+                  className="h-[120px]"
+                />
+                {chatResult?.error && (
+                  <div className="p-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-600">
+                    <p className="font-medium">错误详情：</p>
+                    <p className="mt-1 break-all">{chatResult.error}</p>
+                  </div>
+                )}
+                {chatResult?.success && (
+                  <div className="p-2 rounded-md bg-green-50 border border-green-200 text-xs text-green-700">
+                    <p className="font-medium">
+                      返回内容
+                      {chatResult.latency_ms !== undefined
+                        ? ` (${chatResult.latency_ms}ms)`
+                        : ""}
+                      ：
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap break-words">
+                      {chatResult.content || ""}
+                    </p>
+                  </div>
+                )}
+                {chatResult?.raw && (
+                  <Textarea
+                    value={chatResult.raw}
+                    readOnly
+                    className="h-[180px] font-mono text-xs"
+                  />
+                )}
+              </div>
+
+              <DialogFooter className="mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setChatDialogOpen(false)}
+                  disabled={chatTesting}
+                >
+                  关闭
+                </Button>
+                <Button
+                  onClick={handleChatTest}
+                  disabled={chatTesting || !chatPrompt.trim()}
+                >
+                  {chatTesting ? "发送中..." : "发送"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </section>
 
         {/* 分隔线 */}

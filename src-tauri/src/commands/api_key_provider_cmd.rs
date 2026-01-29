@@ -10,7 +10,7 @@ use crate::database::dao::api_key_provider::{
 };
 use crate::database::DbConnection;
 use crate::services::api_key_provider_service::{
-    ApiKeyProviderService, ConnectionTestResult, ImportResult,
+    ApiKeyProviderService, ChatTestResult, ConnectionTestResult, ImportResult,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -610,5 +610,19 @@ pub async fn test_api_key_provider_connection(
     service
         .0
         .test_connection(&db, &provider_id, model_name)
+        .await
+}
+
+#[tauri::command]
+pub async fn test_api_key_provider_chat(
+    db: State<'_, DbConnection>,
+    service: State<'_, ApiKeyProviderServiceState>,
+    provider_id: String,
+    model_name: Option<String>,
+    prompt: String,
+) -> Result<ChatTestResult, String> {
+    service
+        .0
+        .test_chat(&db, &provider_id, model_name, prompt)
         .await
 }

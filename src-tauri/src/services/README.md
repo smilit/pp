@@ -31,6 +31,15 @@
 - `update_check_service.rs` - 自动更新检查服务（每日检查、系统通知）
 - `update_window.rs` - 更新提醒独立窗口管理
 
+## Aster Agent 集成
+
+Aster Agent 集成位于 `src-tauri/src/agent/` 目录：
+- `aster_state.rs` - Agent 状态管理
+- `aster_agent.rs` - Agent 包装器
+- `event_converter.rs` - 事件转换器
+
+详见 `docs/aiprompts/aster-integration.md`
+
 ## 更新提醒
 
 任何文件变更后，请更新此文档和相关的上级文档。

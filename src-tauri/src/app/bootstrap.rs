@@ -6,7 +6,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::agent::AsterAgentState;
-use crate::agent::NativeAgentState;
 use crate::commands::api_key_provider_cmd::ApiKeyProviderServiceState;
 use crate::commands::connect_cmd::ConnectStateWrapper;
 use crate::commands::context_memory::ContextMemoryServiceState;
@@ -138,7 +137,6 @@ pub struct AppStates {
     pub bookmark_manager: BookmarkManagerState,
     pub enhanced_stats_service: EnhancedStatsServiceState,
     pub batch_operations: BatchOperationsState,
-    pub native_agent: NativeAgentState,
     pub aster_agent: AsterAgentState,
     pub orchestrator: OrchestratorState,
     pub connect_state: ConnectStateWrapper,
@@ -219,7 +217,6 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
     ) = init_flow_monitor(&provider_pool_service_state, &db, &plugin_installer_state)?;
 
     // 其他状态
-    let native_agent_state = NativeAgentState::new();
     let aster_agent_state = AsterAgentState::new();
     let orchestrator_state = OrchestratorState::new();
 
@@ -292,7 +289,6 @@ pub fn init_states(config: &Config) -> Result<AppStates, String> {
         bookmark_manager: bookmark_manager_state,
         enhanced_stats_service: enhanced_stats_service_state,
         batch_operations: batch_operations_state,
-        native_agent: native_agent_state,
         aster_agent: aster_agent_state,
         orchestrator: orchestrator_state,
         connect_state,

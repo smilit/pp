@@ -17,7 +17,6 @@ pub mod model_cmd;
 pub mod model_registry_cmd;
 pub mod models_cmd;
 pub mod music_cmd;
-pub mod native_agent_cmd;
 pub mod network_cmd;
 pub mod oauth_cmd;
 pub mod orchestrator_cmd;

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tauri::{App, Manager};
 
 // use crate::agent::tools::{set_term_scrollback_tool_app_handle, set_terminal_tool_app_handle};
-use crate::agent::NativeAgentState;
+use crate::agent::AsterAgentState;
 use crate::database;
 use crate::flow_monitor::FlowInterceptor;
 use crate::services::provider_pool_service::ProviderPoolService;
@@ -48,9 +48,9 @@ pub fn setup_app(
         }
     }
 
-    // 初始化 NativeAgentState
-    let native_agent_state = NativeAgentState::new();
-    app.manage(native_agent_state);
+    // 初始化 AsterAgentState
+    let aster_agent_state = AsterAgentState::new();
+    app.manage(aster_agent_state);
 
     // TODO: 重新实现 TerminalTool 和 TermScrollbackTool 的 AppHandle 设置
     // 当前暂时注释掉，等待适配 aster-rust 工具系统

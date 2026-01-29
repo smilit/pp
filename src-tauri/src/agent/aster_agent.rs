@@ -4,13 +4,11 @@
 //! 处理消息发送、事件流转换和会话管理
 
 use crate::agent::aster_state::{AsterAgentState, SessionConfigBuilder};
-use crate::agent::event_converter::TauriAgentEvent;
-use aster::agents::SessionConfig;
 use aster::conversation::message::Message;
 use aster::session::SessionManager;
+use futures::StreamExt;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
-use tokio_util::sync::CancellationToken;
 
 /// Aster Agent 包装器
 ///
@@ -36,77 +34,73 @@ impl AsterAgentWrapper {
         session_id: String,
         event_name: String,
     ) -> Result<(), String> {
-        // 确保 Agent 已初始化
+        // 1. 初始化检查
         if !state.is_initialized().await {
             state.init_agent().await?;
         }
 
-        // 创建取消令牌
+        // 2. 创建取消令牌
         let cancel_token = state.create_cancel_token(&session_id).await;
 
-        // 创建用户消息
+        // 3. 构建消息和配置
         let user_message = Message::user().with_text(&message);
-
-        // 创建会话配置
         let session_config = SessionConfigBuilder::new(&session_id).build();
 
-        // 使用 with_agent 方法获取 Agent 并处理
-        let app_clone = app.clone();
-        let event_name_clone = event_name.clone();
-        let cancel_token_clone = cancel_token.clone();
+        // 4. 获取 Agent 引用（关键步骤）
+        let agent_arc = state.get_agent_arc();
+        let guard = agent_arc.read().await;
+        let agent = guard.as_ref().ok_or("Agent not initialized")?;
 
-        let result = state
-            .with_agent(|agent| {
-                // 注意：这里我们需要异步处理，但 with_agent 是同步的
-                // 我们需要重新设计这个接口
-            })
+        // 5. 调用 Agent::reply
+        let stream_result = agent
+            .reply(user_message, session_config, Some(cancel_token.clone()))
             .await;
 
-        // 由于 with_agent 的限制，我们需要使用不同的方法
-        // 直接在这里处理流
-        Self::process_reply_internal(
-            state,
-            &app_clone,
-            user_message,
-            session_config,
-            cancel_token_clone,
-            event_name_clone,
-        )
-        .await?;
+        // 6. 处理流式响应
+        match stream_result {
+            Ok(mut stream) => {
+                while let Some(event_result) = stream.next().await {
+                    match event_result {
+                        Ok(agent_event) => {
+                            // 转换并发送事件到前端
+                            let tauri_events =
+                                crate::agent::event_converter::convert_agent_event(agent_event);
+                            for tauri_event in tauri_events {
+                                if let Err(e) = app.emit(&event_name, &tauri_event) {
+                                    tracing::error!("[AsterAgentWrapper] 发送事件失败: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            // 发送错误事件
+                            let error_event =
+                                crate::agent::event_converter::TauriAgentEvent::Error {
+                                    message: format!("Stream error: {}", e),
+                                };
+                            let _ = app.emit(&event_name, &error_event);
+                        }
+                    }
+                }
 
-        // 清理取消令牌
-        state.remove_cancel_token(&session_id).await;
-
-        Ok(())
-    }
-
-    /// 内部处理回复的方法
-    async fn process_reply_internal(
-        state: &AsterAgentState,
-        app: &AppHandle,
-        user_message: Message,
-        session_config: SessionConfig,
-        cancel_token: CancellationToken,
-        event_name: String,
-    ) -> Result<(), String> {
-        // 这里我们需要一个更好的方式来访问 Agent
-        // 暂时使用一个简化的实现
-
-        // 发送开始事件
-        let start_event = TauriAgentEvent::TextDelta {
-            text: String::new(),
-        };
-        let _ = app.emit(&event_name, &start_event);
-
-        // TODO: 实现完整的 Agent 调用
-        // 由于 Agent.reply() 需要 &self，而我们的 with_agent 方法不支持异步
-        // 我们需要重新设计 AsterAgentState 的接口
-
-        // 发送完成事件
-        let done_event = TauriAgentEvent::FinalDone { usage: None };
-        if let Err(e) = app.emit(&event_name, &done_event) {
-            tracing::error!("Failed to emit final done event: {}", e);
+                // 发送完成事件
+                let done_event =
+                    crate::agent::event_converter::TauriAgentEvent::FinalDone { usage: None };
+                let _ = app.emit(&event_name, &done_event);
+            }
+            Err(e) => {
+                // 发送错误事件并返回错误
+                let error_event = crate::agent::event_converter::TauriAgentEvent::Error {
+                    message: format!("Agent error: {}", e),
+                };
+                let _ = app.emit(&event_name, &error_event);
+                return Err(format!("Agent error: {}", e));
+            }
         }
+
+        // guard 在作用域结束时自动释放
+
+        // 7. 清理取消令牌
+        state.remove_cancel_token(&session_id).await;
 
         Ok(())
     }

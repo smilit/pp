@@ -10,7 +10,6 @@ import {
   RetryChangeEvent,
   FullReloadEvent,
   CredentialPoolChangeEvent,
-  NativeAgentChangeEvent,
 } from "@/lib/configEventManager";
 
 interface UseConfigEventsOptions {
@@ -25,7 +24,6 @@ interface UseConfigEventsOptions {
   onLoggingChanged?: (event: LoggingChangeEvent) => void;
   onRetryChanged?: (event: RetryChangeEvent) => void;
   onCredentialPoolChanged?: (event: CredentialPoolChangeEvent) => void;
-  onNativeAgentChanged?: (event: NativeAgentChangeEvent) => void;
   /** 通用事件回调（用于处理所有事件） */
   onAnyChange?: (event: ConfigChangeEvent) => void;
 }
@@ -83,7 +81,6 @@ export function useConfigEvents(
     onLoggingChanged,
     onRetryChanged,
     onCredentialPoolChanged,
-    onNativeAgentChanged,
     onAnyChange,
   } = options;
 
@@ -106,7 +103,6 @@ export function useConfigEvents(
     onLoggingChanged,
     onRetryChanged,
     onCredentialPoolChanged,
-    onNativeAgentChanged,
     onAnyChange,
   });
 
@@ -121,7 +117,6 @@ export function useConfigEvents(
       onLoggingChanged,
       onRetryChanged,
       onCredentialPoolChanged,
-      onNativeAgentChanged,
       onAnyChange,
     };
   }, [
@@ -133,7 +128,6 @@ export function useConfigEvents(
     onLoggingChanged,
     onRetryChanged,
     onCredentialPoolChanged,
-    onNativeAgentChanged,
     onAnyChange,
   ]);
 
@@ -169,9 +163,6 @@ export function useConfigEvents(
         break;
       case "CredentialPoolChanged":
         callbacksRef.current.onCredentialPoolChanged?.(event.data);
-        break;
-      case "NativeAgentChanged":
-        callbacksRef.current.onNativeAgentChanged?.(event.data);
         break;
     }
   }, []);
@@ -251,5 +242,4 @@ export type {
   RetryChangeEvent,
   FullReloadEvent,
   CredentialPoolChangeEvent,
-  NativeAgentChangeEvent,
 };

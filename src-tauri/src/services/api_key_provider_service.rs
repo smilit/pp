@@ -37,6 +37,40 @@ pub struct ConnectionTestResult {
     pub models: Option<Vec<String>>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::ApiKeyProviderService;
+
+    #[test]
+    fn test_build_codex_responses_request_input_list() {
+        let req = ApiKeyProviderService::build_codex_responses_request("gpt-5", "hello");
+        assert!(req.get("input").is_some());
+        let input = req["input"].as_array().expect("input should be array");
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0]["role"].as_str(), Some("user"));
+        assert_eq!(input[0]["content"][0]["type"].as_str(), Some("input_text"));
+        assert_eq!(input[0]["content"][0]["text"].as_str(), Some("hello"));
+    }
+
+    #[test]
+    fn test_parse_codex_responses_sse_content_delta() {
+        let body = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n\
+data: {\"type\":\"response.output_text.delta\",\"delta\":\"!\"}\n\n\
+data: [DONE]\n";
+        let content = ApiKeyProviderService::parse_codex_responses_sse_content(body);
+        assert_eq!(content, "hi!");
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatTestResult {
+    pub success: bool,
+    pub latency_ms: Option<u64>,
+    pub error: Option<String>,
+    pub content: Option<String>,
+    pub raw: Option<String>,
+}
+
 // ============================================================================
 // 加密服务
 // ============================================================================
@@ -151,6 +185,270 @@ impl ApiKeyProviderService {
             encryption: EncryptionService::new(),
             round_robin_index: RwLock::new(HashMap::new()),
         }
+    }
+
+    pub async fn test_chat(
+        &self,
+        db: &DbConnection,
+        provider_id: &str,
+        model_name: Option<String>,
+        prompt: String,
+    ) -> Result<ChatTestResult, String> {
+        use std::time::Instant;
+
+        let provider_with_keys = self
+            .get_provider(db, provider_id)?
+            .ok_or_else(|| format!("Provider not found: {}", provider_id))?;
+
+        let provider = &provider_with_keys.provider;
+
+        let api_key = self
+            .get_next_api_key(db, provider_id)?
+            .ok_or_else(|| "没有可用的 API Key".to_string())?;
+
+        let test_model = model_name.or_else(|| provider.custom_models.first().cloned());
+        let test_model =
+            test_model.ok_or_else(|| "缺少模型名称：请在自定义模型中填写一个模型名".to_string())?;
+
+        let start = Instant::now();
+
+        // Codex 协议直接走 /responses 端点
+        let result = if provider.provider_type == ApiProviderType::Codex {
+            self.test_codex_responses_endpoint(&api_key, &provider.api_host, &test_model, &prompt)
+                .await
+        } else {
+            self.test_openai_chat_once(&api_key, &provider.api_host, &test_model, &prompt)
+                .await
+        };
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        match result {
+            Ok((content, raw)) => Ok(ChatTestResult {
+                success: true,
+                latency_ms: Some(latency_ms),
+                error: None,
+                content: Some(content),
+                raw: Some(raw),
+            }),
+            Err(e) => Ok(ChatTestResult {
+                success: false,
+                latency_ms: Some(latency_ms),
+                error: Some(e),
+                content: None,
+                raw: None,
+            }),
+        }
+    }
+
+    async fn test_openai_chat_once(
+        &self,
+        api_key: &str,
+        api_host: &str,
+        model: &str,
+        prompt: &str,
+    ) -> Result<(String, String), String> {
+        use crate::models::openai::{ChatCompletionRequest, ChatMessage, MessageContent};
+        use crate::providers::openai_custom::OpenAICustomProvider;
+
+        let provider =
+            OpenAICustomProvider::with_config(api_key.to_string(), Some(api_host.to_string()));
+
+        let request = ChatCompletionRequest {
+            model: model.to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: Some(MessageContent::Text(prompt.to_string())),
+                tool_calls: None,
+                tool_call_id: None,
+                reasoning_content: None,
+            }],
+            temperature: Some(0.2),
+            max_tokens: Some(64),
+            top_p: None,
+            stream: false,
+            tools: None,
+            tool_choice: None,
+            reasoning_effort: None,
+        };
+
+        let resp = provider
+            .call_api(&request)
+            .await
+            .map_err(|e| format!("API 调用失败: {}", e))?;
+
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+
+        if status.is_success() {
+            let parsed: serde_json::Value = serde_json::from_str(&body)
+                .map_err(|e| format!("解析响应失败: {} - {}", e, body))?;
+
+            let content = parsed["choices"]
+                .as_array()
+                .and_then(|arr| arr.first())
+                .and_then(|c| c["message"]["content"].as_str())
+                .unwrap_or("")
+                .to_string();
+
+            return Ok((content, body));
+        }
+
+        // 部分上游（如某些 relay）强制要求 stream=true
+        if status.as_u16() == 400 && body.contains("Stream must be set to true") {
+            let mut request2 = request.clone();
+            request2.stream = true;
+
+            let resp2 = provider
+                .call_api(&request2)
+                .await
+                .map_err(|e| format!("API 调用失败: {}", e))?;
+
+            let status2 = resp2.status();
+            let body2 = resp2.text().await.unwrap_or_default();
+
+            if !status2.is_success() {
+                return Err(format!("API 返回错误: {} - {}", status2, body2));
+            }
+
+            let content = Self::parse_chat_completions_sse_content(&body2);
+            return Ok((content, body2));
+        }
+
+        // 部分上游（如 Codex relay）不支持 messages 参数，需要走 /responses 端点
+        if status.as_u16() == 400 && body.contains("Unsupported parameter: messages") {
+            return self
+                .test_codex_responses_endpoint(api_key, api_host, model, prompt)
+                .await;
+        }
+
+        Err(format!("API 返回错误: {} - {}", status, body))
+    }
+
+    fn parse_chat_completions_sse_content(body: &str) -> String {
+        let mut out = String::new();
+
+        for line in body.lines() {
+            let line = line.trim();
+            if !line.starts_with("data:") {
+                continue;
+            }
+            let data = line.trim_start_matches("data:").trim();
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                if let Some(s) = v["choices"][0]["delta"]["content"].as_str() {
+                    out.push_str(s);
+                } else if let Some(s) = v["choices"][0]["message"]["content"].as_str() {
+                    out.push_str(s);
+                }
+            }
+        }
+
+        out
+    }
+
+    fn build_codex_responses_request(model: &str, prompt: &str) -> serde_json::Value {
+        serde_json::json!({
+            "model": model,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ],
+            "stream": true,
+            "max_output_tokens": 64
+        })
+    }
+
+    /// 测试 Codex /responses 端点（用于不支持 messages 参数的上游）
+    async fn test_codex_responses_endpoint(
+        &self,
+        api_key: &str,
+        api_host: &str,
+        model: &str,
+        prompt: &str,
+    ) -> Result<(String, String), String> {
+        // 构建 /responses 端点 URL
+        let base = api_host.trim_end_matches('/');
+        let url = if base.ends_with("/v1") {
+            format!("{}/responses", base)
+        } else if base.ends_with("/openai") {
+            format!("{}/v1/responses", base)
+        } else {
+            format!("{}/v1/responses", base)
+        };
+
+        // Codex Responses 格式请求体（input 必须是列表）
+        let request_body = Self::build_codex_responses_request(model, prompt);
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| format!("API 调用失败: {}", e))?;
+
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+
+        if !status.is_success() {
+            return Err(format!("API 返回错误: {} - {}", status, body));
+        }
+
+        // 解析 Codex SSE 响应
+        let content = Self::parse_codex_responses_sse_content(&body);
+        Ok((content, body))
+    }
+
+    fn parse_codex_responses_sse_content(body: &str) -> String {
+        let mut out = String::new();
+
+        for line in body.lines() {
+            let line = line.trim();
+            if !line.starts_with("data:") {
+                continue;
+            }
+            let data = line.trim_start_matches("data:").trim();
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                // Codex responses 格式: {"type": "response.output_text.delta", "delta": "..."}
+                if let Some(s) = v["delta"].as_str() {
+                    out.push_str(s);
+                }
+                // 或者完整响应格式
+                if let Some(arr) = v["output"].as_array() {
+                    for item in arr {
+                        if item["type"].as_str() == Some("message") {
+                            if let Some(content_arr) = item["content"].as_array() {
+                                for c in content_arr {
+                                    if c["type"].as_str() == Some("output_text") {
+                                        if let Some(text) = c["text"].as_str() {
+                                            out.push_str(text);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        out
     }
 
     // ==================== Provider 操作 ====================
@@ -1329,17 +1627,50 @@ impl ApiKeyProviderService {
                 self.test_gemini_connection(&api_key, &provider.api_host)
                     .await
             }
+            ApiProviderType::Codex => {
+                // Codex 协议直接走 /responses 端点
+                let test_model = model_name
+                    .or_else(|| provider.custom_models.first().cloned())
+                    .ok_or_else(|| "缺少模型名称：请在自定义模型中填写一个模型名".to_string())?;
+
+                self.test_codex_responses_endpoint(&api_key, &provider.api_host, &test_model, "hi")
+                    .await
+                    .map(|_| vec![test_model])
+            }
             _ => {
                 // OpenAI 兼容类型，优先使用 /models 端点
+                eprintln!("[TEST_CONNECTION] model_name param: {:?}", model_name);
+                eprintln!(
+                    "[TEST_CONNECTION] provider.custom_models: {:?}",
+                    provider.custom_models
+                );
+
                 let models_result = self
                     .test_openai_models_endpoint(&api_key, &provider.api_host)
                     .await;
 
-                // 如果 /models 端点失败且有模型名称，尝试发送测试请求
-                if models_result.is_err() && model_name.is_some() {
-                    let test_model = model_name.unwrap();
-                    self.test_openai_chat_completion(&api_key, &provider.api_host, &test_model)
-                        .await
+                eprintln!("[TEST_CONNECTION] models_result: {:?}", models_result);
+
+                // 如果 /models 端点失败：
+                // 1) 优先用传入的 model_name
+                // 2) 否则如果 Provider 配置了 custom_models，则用第一个模型降级测试 chat/completions
+                if models_result.is_err() {
+                    let test_model = model_name.or_else(|| provider.custom_models.first().cloned());
+
+                    eprintln!("[TEST_CONNECTION] fallback test_model: {:?}", test_model);
+
+                    if let Some(test_model) = test_model {
+                        let chat_result = self
+                            .test_openai_chat_completion(&api_key, &provider.api_host, &test_model)
+                            .await;
+                        eprintln!(
+                            "[TEST_CONNECTION] chat_completion result: {:?}",
+                            chat_result
+                        );
+                        chat_result
+                    } else {
+                        models_result
+                    }
                 } else {
                     models_result
                 }
@@ -1404,42 +1735,9 @@ impl ApiKeyProviderService {
         api_host: &str,
         model: &str,
     ) -> Result<Vec<String>, String> {
-        use crate::models::openai::{ChatCompletionRequest, ChatMessage, MessageContent};
-        use crate::providers::openai_custom::OpenAICustomProvider;
-
-        let provider =
-            OpenAICustomProvider::with_config(api_key.to_string(), Some(api_host.to_string()));
-
-        let request = ChatCompletionRequest {
-            model: model.to_string(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: Some(MessageContent::Text("hi".to_string())),
-                tool_calls: None,
-                tool_call_id: None,
-                reasoning_content: None,
-            }],
-            temperature: None,
-            max_tokens: Some(1),
-            top_p: None,
-            stream: false,
-            tools: None,
-            tool_choice: None,
-            reasoning_effort: None,
-        };
-
-        let response = provider
-            .call_api(&request)
+        self.test_openai_chat_once(api_key, api_host, model, "hi")
             .await
-            .map_err(|e| format!("API 调用失败: {}", e))?;
-
-        if response.status().is_success() {
-            Ok(vec![model.to_string()])
-        } else {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            Err(format!("API 返回错误: {} - {}", status, body))
-        }
+            .map(|_| vec![model.to_string()])
     }
 
     /// 测试 Claude Key 的客户端兼容性

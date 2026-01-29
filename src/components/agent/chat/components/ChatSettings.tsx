@@ -24,7 +24,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { getAgentBackend, setAgentBackend, type AgentBackend } from "../config";
 
 // --- Styled Components ---
 
@@ -143,14 +142,6 @@ interface ChatSettingsProps {
 export const ChatSettings: React.FC<ChatSettingsProps> = ({ onClose }) => {
   // Local state for UI toggles (Mocking functional settings)
   const [fontSize, setFontSize] = useState([14]);
-  const [agentBackend, setBackend] = useState<AgentBackend>(getAgentBackend());
-
-  const handleBackendChange = (value: AgentBackend) => {
-    setBackend(value);
-    setAgentBackend(value);
-    // 提示用户需要刷新页面
-    window.location.reload();
-  };
 
   return (
     <SettingsContainer>
@@ -170,30 +161,6 @@ export const ChatSettings: React.FC<ChatSettingsProps> = ({ onClose }) => {
       </Header>
 
       <ScrollArea className="flex-1">
-        {/* Agent Backend Settings */}
-        <CollapsibleSection title="Agent 后端">
-          <SettingRow>
-            <div>
-              <div className="label">Agent 引擎</div>
-              <div className="desc">切换后需刷新页面</div>
-            </div>
-            <Select
-              value={agentBackend}
-              onValueChange={(v) => handleBackendChange(v as AgentBackend)}
-            >
-              <SelectTrigger className="w-[100px] h-7 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="native">Native</SelectItem>
-                <SelectItem value="aster">Aster</SelectItem>
-              </SelectContent>
-            </Select>
-          </SettingRow>
-        </CollapsibleSection>
-
-        <Separator />
-
         {/* Message Settings */}
         <CollapsibleSection title="消息设置">
           <SettingRow>

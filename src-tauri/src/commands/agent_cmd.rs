@@ -1,16 +1,9 @@
 //! Agent 命令模块
 //!
-//! 提供原生 Agent 的 Tauri 命令（兼容旧 API）
+//! 提供 Agent 的 Tauri 命令（兼容旧 API）
+//! 内部使用 Aster Agent 实现
 
-// TODO: 重新实现工具响应处理，适配 aster-rust 工具系统
-// use crate::agent::tools::{
-//     handle_term_scrollback_response, handle_terminal_command_response, GetScrollbackResponse,
-//     TerminalCommandResponse,
-// };
-use crate::agent::{
-    AgentMessage, AgentSession, ImageData, NativeAgentState, NativeChatRequest, ProviderType,
-};
-use crate::commands::network_cmd::get_local_url;
+use crate::agent::{AgentMessage, AgentSession, AsterAgentState};
 use crate::database::dao::agent::AgentDao;
 use crate::database::DbConnection;
 use crate::AppState;
@@ -35,23 +28,21 @@ pub struct CreateSessionResponse {
     pub model: Option<String>,
 }
 
-/// 启动 Agent（原生实现，无需外部进程）
+/// 启动 Agent（使用 Aster 实现）
 #[tauri::command]
 pub async fn agent_start_process(
-    agent_state: State<'_, NativeAgentState>,
+    agent_state: State<'_, AsterAgentState>,
     app_state: State<'_, AppState>,
     _port: Option<u16>,
 ) -> Result<AgentProcessStatus, String> {
-    tracing::info!("[Agent] 初始化原生 Agent");
+    tracing::info!("[Agent] 初始化 Aster Agent");
 
-    let (host, port, api_key, running, default_provider) = {
+    let (host, port, running) = {
         let state = app_state.read().await;
         (
             state.config.server.host.clone(),
             state.config.server.port,
-            state.running_api_key.clone(),
             state.running,
-            state.config.routing.default_provider.clone(),
         )
     };
 
@@ -59,16 +50,9 @@ pub async fn agent_start_process(
         return Err("ProxyCast API Server 未运行，请先启动服务器".to_string());
     }
 
-    let api_key = api_key.ok_or_else(|| "ProxyCast API Server 未配置 API Key".to_string())?;
-    let base_url = get_local_url(&host, port);
-    let provider_type = ProviderType::from_str(&default_provider);
+    agent_state.init_agent().await?;
 
-    agent_state.init(
-        base_url.clone(),
-        api_key,
-        provider_type,
-        Some(default_provider),
-    )?;
+    let base_url = format!("http://{}:{}", host, port);
 
     Ok(AgentProcessStatus {
         running: true,
@@ -79,23 +63,26 @@ pub async fn agent_start_process(
 
 /// 停止 Agent
 #[tauri::command]
-pub async fn agent_stop_process(agent_state: State<'_, NativeAgentState>) -> Result<(), String> {
-    tracing::info!("[Agent] 停止原生 Agent");
-    agent_state.reset();
+pub async fn agent_stop_process(_agent_state: State<'_, AsterAgentState>) -> Result<(), String> {
+    tracing::info!("[Agent] 停止 Aster Agent（无操作，Agent 保持活跃）");
+    // Aster Agent 不需要显式停止
     Ok(())
 }
 
 /// 获取 Agent 状态
 #[tauri::command]
 pub async fn agent_get_process_status(
-    agent_state: State<'_, NativeAgentState>,
+    agent_state: State<'_, AsterAgentState>,
     app_state: State<'_, AppState>,
 ) -> Result<AgentProcessStatus, String> {
-    let initialized = agent_state.is_initialized();
+    let initialized = agent_state.is_initialized().await;
 
     if initialized {
         let state = app_state.read().await;
-        let base_url = get_local_url(&state.config.server.host, state.config.server.port);
+        let base_url = format!(
+            "http://{}:{}",
+            state.config.server.host, state.config.server.port
+        );
         Ok(AgentProcessStatus {
             running: true,
             base_url: Some(base_url),
@@ -121,8 +108,7 @@ pub struct SkillInfo {
 /// 创建 Agent 会话
 #[tauri::command]
 pub async fn agent_create_session(
-    agent_state: State<'_, NativeAgentState>,
-    app_state: State<'_, AppState>,
+    agent_state: State<'_, AsterAgentState>,
     db: State<'_, DbConnection>,
     provider_type: String,
     model: Option<String>,
@@ -136,39 +122,28 @@ pub async fn agent_create_session(
         skills.as_ref().map(|s| s.len())
     );
 
-    // 如果未初始化，自动初始化
-    if !agent_state.is_initialized() {
-        let (host, port, api_key, running, default_provider) = {
-            let state = app_state.read().await;
-            (
-                state.config.server.host.clone(),
-                state.config.server.port,
-                state.running_api_key.clone(),
-                state.running,
-                state.config.routing.default_provider.clone(),
-            )
-        };
+    // 初始化 Agent
+    agent_state.init_agent().await?;
 
-        if !running {
-            return Err("ProxyCast API Server 未运行".to_string());
-        }
+    // 生成会话 ID
+    let session_id = uuid::Uuid::new_v4().to_string();
 
-        let api_key = api_key.ok_or_else(|| "未配置 API Key".to_string())?;
-        let base_url = get_local_url(&host, port);
-        let provider_type = ProviderType::from_str(&default_provider);
-        agent_state.init(base_url, api_key, provider_type, Some(default_provider))?;
-    }
+    // 从凭证池配置 Provider
+    let model_name = model
+        .clone()
+        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+    let aster_config = agent_state
+        .configure_provider_from_pool(&db, &provider_type, &model_name, &session_id)
+        .await?;
 
     // 构建包含 Skills 的 System Prompt
     let final_system_prompt = build_system_prompt_with_skills(system_prompt, skills.as_ref());
-
-    let session_id = agent_state.create_session(model.clone(), final_system_prompt.clone())?;
 
     // 保存会话到数据库
     let now = chrono::Utc::now().to_rfc3339();
     let session = AgentSession {
         id: session_id.clone(),
-        model: model.clone().unwrap_or_else(|| "default".to_string()),
+        model: model_name.clone(),
         messages: Vec::new(),
         system_prompt: final_system_prompt,
         created_at: now.clone(),
@@ -185,9 +160,9 @@ pub async fn agent_create_session(
     Ok(CreateSessionResponse {
         session_id,
         credential_name: "ProxyCast".to_string(),
-        credential_uuid: "native-agent".to_string(),
+        credential_uuid: aster_config.credential_uuid,
         provider_type,
-        model,
+        model: Some(model_name),
     })
 }
 
@@ -234,98 +209,19 @@ pub struct ImageInputParam {
 }
 
 /// 发送消息到 Agent
+///
+/// 注意：此命令已废弃，请使用 aster_agent_chat_stream
 #[tauri::command]
 pub async fn agent_send_message(
-    agent_state: State<'_, NativeAgentState>,
-    app_state: State<'_, AppState>,
-    session_id: Option<String>,
-    message: String,
-    images: Option<Vec<ImageInputParam>>,
-    model: Option<String>,
-    web_search: Option<bool>,
-    thinking: Option<bool>,
+    _agent_state: State<'_, AsterAgentState>,
+    _session_id: Option<String>,
+    _message: String,
+    _images: Option<Vec<ImageInputParam>>,
+    _model: Option<String>,
+    _web_search: Option<bool>,
+    _thinking: Option<bool>,
 ) -> Result<String, String> {
-    let images_count = images.as_ref().map(|v| v.len()).unwrap_or(0);
-    let images_sizes: Vec<usize> = images
-        .as_ref()
-        .map(|imgs| imgs.iter().map(|i| i.data.len()).collect())
-        .unwrap_or_default();
-
-    tracing::info!(
-        "[Agent] 发送消息: len={}, session={:?}, images_count={}, images_sizes={:?}, web_search={:?}, thinking={:?}",
-        message.len(),
-        session_id,
-        images_count,
-        images_sizes,
-        web_search,
-        thinking
-    );
-
-    // 如果未初始化，自动初始化
-    if !agent_state.is_initialized() {
-        let (host, port, api_key, running, default_provider) = {
-            let state = app_state.read().await;
-            (
-                state.config.server.host.clone(),
-                state.config.server.port,
-                state.running_api_key.clone(),
-                state.running,
-                state.config.routing.default_provider.clone(),
-            )
-        };
-
-        if !running {
-            return Err("ProxyCast API Server 未运行".to_string());
-        }
-
-        let api_key = api_key.ok_or_else(|| "未配置 API Key".to_string())?;
-        let base_url = get_local_url(&host, port);
-        let provider_type = ProviderType::from_str(&default_provider);
-        agent_state.init(base_url, api_key, provider_type, Some(default_provider))?;
-    }
-
-    // 根据启用的模式构建最终消息
-    let web_search_enabled = web_search.unwrap_or(false);
-    let thinking_enabled = thinking.unwrap_or(false);
-
-    let final_message = match (web_search_enabled, thinking_enabled) {
-        (true, true) => format!(
-            "[深度思考 + 联网搜索模式] 请深入分析问题，并搜索网络获取最新信息，然后给出详细的回答：\n\n{}",
-            message
-        ),
-        (true, false) => format!(
-            "[联网搜索模式] 请先搜索网络获取最新信息，然后回答以下问题：\n\n{}",
-            message
-        ),
-        (false, true) => format!(
-            "[深度思考模式] 请深入分析这个问题，考虑多个角度，给出详细的推理过程和结论：\n\n{}",
-            message
-        ),
-        (false, false) => message,
-    };
-
-    let request = NativeChatRequest {
-        session_id,
-        message: final_message,
-        model,
-        images: images.map(|imgs| {
-            imgs.into_iter()
-                .map(|img| ImageData {
-                    data: img.data,
-                    media_type: img.media_type,
-                })
-                .collect()
-        }),
-        stream: false,
-    };
-
-    let response = agent_state.chat(request).await?;
-
-    if response.success {
-        Ok(response.content)
-    } else {
-        Err(response.error.unwrap_or_else(|| "未知错误".to_string()))
-    }
+    Err("此命令已废弃，请使用 aster_agent_chat_stream 进行流式对话".to_string())
 }
 
 /// 会话信息
@@ -347,14 +243,13 @@ pub async fn agent_list_sessions(db: State<'_, DbConnection>) -> Result<Vec<Sess
     let sessions =
         AgentDao::list_sessions(&conn).map_err(|e| format!("获取会话列表失败: {}", e))?;
 
-    // 获取每个会话的消息数量
     let result: Vec<SessionInfo> = sessions
         .into_iter()
         .map(|s| {
             let messages_count = AgentDao::get_message_count(&conn, &s.id).unwrap_or(0);
             SessionInfo {
                 session_id: s.id,
-                provider_type: "native".to_string(),
+                provider_type: "aster".to_string(),
                 model: Some(s.model),
                 created_at: s.created_at.clone(),
                 last_activity: s.updated_at,
@@ -369,37 +264,35 @@ pub async fn agent_list_sessions(db: State<'_, DbConnection>) -> Result<Vec<Sess
 /// 获取会话详情
 #[tauri::command]
 pub async fn agent_get_session(
-    agent_state: State<'_, NativeAgentState>,
+    db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<SessionInfo, String> {
-    let session = agent_state
-        .get_session(&session_id)?
+    let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
+
+    let session = AgentDao::get_session(&conn, &session_id)
+        .map_err(|e| format!("获取会话失败: {}", e))?
         .ok_or_else(|| "会话不存在".to_string())?;
+
+    let messages_count = AgentDao::get_message_count(&conn, &session_id).unwrap_or(0);
 
     Ok(SessionInfo {
         session_id: session.id,
-        provider_type: "native".to_string(),
+        provider_type: "aster".to_string(),
         model: Some(session.model),
         created_at: session.created_at.clone(),
-        last_activity: session.created_at,
-        messages_count: session.messages.len(),
+        last_activity: session.updated_at,
+        messages_count,
     })
 }
 
 /// 删除会话
 #[tauri::command]
 pub async fn agent_delete_session(
-    agent_state: State<'_, NativeAgentState>,
     db: State<'_, DbConnection>,
     session_id: String,
 ) -> Result<(), String> {
-    // 从内存中删除
-    agent_state.delete_session(&session_id);
-
-    // 从数据库中删除
     let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
     AgentDao::delete_session(&conn, &session_id).map_err(|e| format!("删除会话失败: {}", e))?;
-
     Ok(())
 }
 
@@ -410,84 +303,7 @@ pub async fn agent_get_session_messages(
     session_id: String,
 ) -> Result<Vec<AgentMessage>, String> {
     let conn = db.lock().map_err(|e| format!("数据库锁定失败: {}", e))?;
-
     let messages =
         AgentDao::get_messages(&conn, &session_id).map_err(|e| format!("获取消息失败: {}", e))?;
-
     Ok(messages)
-}
-
-/// 处理终端命令响应
-///
-/// 前端在用户批准/拒绝命令后调用此命令，将结果传递给 TerminalTool
-#[tauri::command]
-pub async fn agent_terminal_command_response(
-    request_id: String,
-    success: bool,
-    output: String,
-    error: Option<String>,
-    exit_code: Option<i32>,
-    rejected: bool,
-) -> Result<(), String> {
-    tracing::info!(
-        "[Agent] 收到终端命令响应: request_id={}, success={}, rejected={}",
-        request_id,
-        success,
-        rejected
-    );
-
-    // TODO: 重新实现终端命令响应处理，适配 aster-rust 工具系统
-    // let response = TerminalCommandResponse {
-    //     request_id,
-    //     success,
-    //     output,
-    //     error,
-    //     exit_code,
-    //     rejected,
-    // };
-
-    // handle_terminal_command_response(response);
-
-    tracing::warn!("[Agent] 终端命令响应处理暂时禁用，等待适配 aster-rust 工具系统");
-
-    Ok(())
-}
-
-/// 前端返回终端滚动缓冲区数据
-#[tauri::command]
-pub async fn agent_term_scrollback_response(
-    request_id: String,
-    success: bool,
-    total_lines: usize,
-    line_start: usize,
-    line_end: usize,
-    content: String,
-    has_more: bool,
-    error: Option<String>,
-) -> Result<(), String> {
-    tracing::info!(
-        "[Agent] 收到终端滚动缓冲区响应: request_id={}, success={}, lines={}-{}",
-        request_id,
-        success,
-        line_start,
-        line_end
-    );
-
-    // TODO: 重新实现终端滚动缓冲区响应处理，适配 aster-rust 工具系统
-    // let response = GetScrollbackResponse {
-    //     request_id,
-    //     success,
-    //     total_lines,
-    //     line_start,
-    //     line_end,
-    //     content,
-    //     has_more,
-    //     error,
-    // };
-
-    // handle_term_scrollback_response(response);
-
-    tracing::warn!("[Agent] 终端滚动缓冲区响应处理暂时禁用，等待适配 aster-rust 工具系统");
-
-    Ok(())
 }

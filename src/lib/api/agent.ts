@@ -378,6 +378,8 @@ export async function sendAgentMessage(
  * });
  * await sendAgentMessageStream(message, eventName, sessionId, model, undefined, provider);
  * ```
+ *
+ * @deprecated 请使用 sendAsterMessageStream 代替
  */
 export async function sendAgentMessageStream(
   message: string,
@@ -386,16 +388,22 @@ export async function sendAgentMessageStream(
   model?: string,
   images?: ImageInput[],
   provider?: string,
-  terminalMode?: boolean,
+  _terminalMode?: boolean,
 ): Promise<void> {
-  return await safeInvoke("native_agent_chat_stream", {
-    message,
-    eventName,
-    sessionId,
-    model,
-    images,
-    provider,
-    terminalMode,
+  // 使用 Aster Agent 实现
+  return await safeInvoke("aster_agent_chat_stream", {
+    request: {
+      message,
+      session_id: sessionId || "default",
+      event_name: eventName,
+      images,
+      provider_config: provider
+        ? {
+            provider_name: provider,
+            model_name: model || "claude-sonnet-4-20250514",
+          }
+        : undefined,
+    },
   });
 }
 

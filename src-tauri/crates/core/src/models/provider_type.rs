@@ -74,7 +74,23 @@ impl std::str::FromStr for ProviderType {
             "azure_openai" | "azure-openai" => Ok(ProviderType::AzureOpenai),
             "aws_bedrock" | "aws-bedrock" => Ok(ProviderType::AwsBedrock),
             "ollama" => Ok(ProviderType::Ollama),
-            _ => Err(format!("Invalid provider: {s}")),
+            // OpenAI 兼容的第三方 Provider 映射到 OpenAI
+            "deepseek" | "deep_seek" | "deep-seek" => Ok(ProviderType::OpenAI),
+            "qwen" | "tongyi" | "dashscope" => Ok(ProviderType::OpenAI),
+            "zhipu" | "glm" | "chatglm" => Ok(ProviderType::OpenAI),
+            "moonshot" | "kimi" => Ok(ProviderType::OpenAI),
+            "baichuan" => Ok(ProviderType::OpenAI),
+            "minimax" => Ok(ProviderType::OpenAI),
+            "yi" | "01ai" => Ok(ProviderType::OpenAI),
+            "stepfun" | "step" => Ok(ProviderType::OpenAI),
+            "groq" => Ok(ProviderType::OpenAI),
+            "together" | "togetherai" => Ok(ProviderType::OpenAI),
+            "fireworks" | "fireworksai" => Ok(ProviderType::OpenAI),
+            "perplexity" => Ok(ProviderType::OpenAI),
+            "siliconflow" => Ok(ProviderType::OpenAI),
+            "oneapi" | "one-api" | "newapi" | "new-api" => Ok(ProviderType::OpenAI),
+            "custom" | "custom_openai" => Ok(ProviderType::OpenAI),
+            _ => Err(format!("Unknown provider: {s}")),
         }
     }
 }

@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 pub enum ApiProviderType {
     Openai,
     OpenaiResponse,
+    /// Codex CLI 协议（使用 /responses 端点）
+    Codex,
     Anthropic,
     /// Anthropic 兼容格式（支持 system 数组格式等变体）
     AnthropicCompatible,
@@ -36,6 +38,7 @@ impl std::fmt::Display for ApiProviderType {
         match self {
             ApiProviderType::Openai => write!(f, "openai"),
             ApiProviderType::OpenaiResponse => write!(f, "openai-response"),
+            ApiProviderType::Codex => write!(f, "codex"),
             ApiProviderType::Anthropic => write!(f, "anthropic"),
             ApiProviderType::AnthropicCompatible => write!(f, "anthropic-compatible"),
             ApiProviderType::Gemini => write!(f, "gemini"),
@@ -56,6 +59,7 @@ impl std::str::FromStr for ApiProviderType {
         match s.to_lowercase().as_str() {
             "openai" => Ok(ApiProviderType::Openai),
             "openai-response" => Ok(ApiProviderType::OpenaiResponse),
+            "codex" => Ok(ApiProviderType::Codex),
             "anthropic" => Ok(ApiProviderType::Anthropic),
             "anthropic-compatible" => Ok(ApiProviderType::AnthropicCompatible),
             "gemini" => Ok(ApiProviderType::Gemini),

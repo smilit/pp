@@ -1,0 +1,189 @@
+# Provider 系统
+
+## 概述
+
+Provider 系统负责与各 LLM 服务商的认证和 API 交互。支持 OAuth 和 API Key 两种认证方式。
+
+## 目录结构
+
+```
+src-tauri/src/providers/
+├── mod.rs              # 模块入口和 Provider 枚举
+├── traits.rs           # Provider trait 定义
+├── error.rs            # 错误类型
+├── kiro.rs             # Kiro/CodeWhisperer OAuth
+├── gemini.rs           # Gemini OAuth
+├── qwen.rs             # Qwen OAuth
+├── antigravity.rs      # Antigravity OAuth
+├── claude_oauth.rs     # Claude OAuth
+├── claude_custom.rs    # Claude API Key
+├── openai_custom.rs    # OpenAI API Key
+├── codex.rs            # Codex Provider
+├── iflow.rs            # iFlow Provider
+├── vertex.rs           # Vertex AI Provider
+└── tests.rs            # 单元测试
+```
+
+## Provider 枚举
+
+```rust
+pub enum ProviderType {
+    Kiro,           // Kiro/CodeWhisperer OAuth
+    Gemini,         // Google Gemini OAuth
+    Qwen,           // 通义千问 OAuth
+    Antigravity,    // Antigravity (Gemini CLI) OAuth
+    ClaudeOAuth,    // Claude OAuth
+    ClaudeCustom,   // Claude API Key
+    OpenAICustom,   // OpenAI API Key
+    Codex,          // Codex
+    IFlow,          // iFlow
+    Vertex,         // Vertex AI
+}
+```
+
+## Provider Trait
+
+```rust
+pub trait Provider: Send + Sync {
+    /// 获取 Provider 类型
+    fn provider_type(&self) -> ProviderType;
+    
+    /// 加载凭证
+    async fn load_credential(&self, path: &Path) -> Result<CredentialData>;
+    
+    /// 刷新 Token
+    async fn refresh_token(&self, credential: &mut CredentialData) -> Result<()>;
+    
+    /// 检查 Token 是否过期
+    fn is_token_expired(&self, credential: &CredentialData) -> bool;
+    
+    /// 发送 API 请求
+    async fn send_request(&self, credential: &CredentialData, request: &Request) -> Result<Response>;
+}
+```
+
+## OAuth Provider 实现
+
+### Kiro Provider
+
+```rust
+// 凭证文件结构
+struct KiroCredential {
+    access_token: String,
+    refresh_token: String,
+    expires_at: i64,
+    client_id: Option<String>,      // 从 clientIdHash 合并
+    client_secret: Option<String>,  // 从 clientIdHash 合并
+}
+
+// Token 刷新流程
+1. 检查 expires_at 是否过期
+2. 使用 refresh_token 请求新 token
+3. 更新凭证文件
+```
+
+### Gemini Provider
+
+```rust
+// OAuth 端点
+const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+
+// 凭证文件结构
+struct GeminiCredential {
+    access_token: String,
+    refresh_token: String,
+    expires_at: i64,
+}
+```
+
+## API Key Provider 实现
+
+### OpenAI Custom
+
+```rust
+// 凭证结构
+struct OpenAICredential {
+    api_key: String,
+    base_url: Option<String>,  // 自定义端点
+}
+
+// 请求头
+Authorization: Bearer {api_key}
+```
+
+### Claude Custom
+
+```rust
+// 凭证结构
+struct ClaudeCredential {
+    api_key: String,
+    base_url: Option<String>,
+}
+
+// 请求头
+x-api-key: {api_key}
+anthropic-version: 2023-06-01
+```
+
+## 凭证管理策略
+
+### 方案 B: 独立副本策略
+
+```
+原始凭证文件 (用户上传)
+       │
+       ▼
+┌─────────────────────────────────────┐
+│  合并 clientIdHash 中的             │
+│  client_id / client_secret          │
+└─────────────────────────────────────┘
+       │
+       ▼
+副本凭证文件 (credentials/ 目录)
+       │
+       ▼
+独立刷新和管理
+```
+
+优点：
+- 每个副本完全独立
+- 支持多账号场景
+- 不影响原始文件
+
+## 健康检查
+
+```rust
+// 健康检查逻辑
+async fn health_check(&self, credential: &CredentialData) -> HealthStatus {
+    // 1. 检查 Token 是否过期
+    if self.is_token_expired(credential) {
+        return HealthStatus::TokenExpired;
+    }
+    
+    // 2. 尝试刷新 Token
+    if let Err(e) = self.refresh_token(credential).await {
+        return HealthStatus::RefreshFailed(e);
+    }
+    
+    // 3. 发送测试请求
+    match self.send_test_request(credential).await {
+        Ok(_) => HealthStatus::Healthy,
+        Err(e) => HealthStatus::Unhealthy(e),
+    }
+}
+```
+
+## 添加新 Provider
+
+1. 在 `providers/` 创建新模块文件
+2. 实现 `Provider` trait
+3. 在 `ProviderType` 枚举添加新类型
+4. 在 `ProviderPoolService` 注册健康检查
+5. 更新前端 Provider 选择器
+
+## 相关文档
+
+- [credential-pool.md](credential-pool.md) - 凭证池管理
+- [converter.md](converter.md) - 协议转换
+- [server.md](server.md) - HTTP 服务器

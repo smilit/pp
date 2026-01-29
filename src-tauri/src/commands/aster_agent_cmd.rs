@@ -2,17 +2,50 @@
 //!
 //! 提供基于 Aster 框架的 Tauri 命令
 //! 这是新的对话系统实现，与 native_agent_cmd.rs 并行存在
+//! 支持从 ProxyCast 凭证池自动选择凭证
 
 use crate::agent::aster_state::{ProviderConfig, SessionConfigBuilder};
 use crate::agent::event_converter::convert_agent_event;
 use crate::agent::{
     AsterAgentState, AsterAgentWrapper, SessionDetail, SessionInfo, TauriAgentEvent,
 };
+use crate::database::DbConnection;
 use aster::conversation::message::Message;
+use aster::session::SessionManager;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, State};
+
+/// 确保 session 在 Aster 数据库中存在
+/// 如果不存在则创建新的 session
+async fn ensure_session_exists(session_id: &str) -> Result<String, String> {
+    // 尝试获取现有 session
+    match SessionManager::get_session(session_id, false).await {
+        Ok(_) => {
+            tracing::debug!("[AsterAgent] Session 已存在: {}", session_id);
+            Ok(session_id.to_string())
+        }
+        Err(_) => {
+            // Session 不存在，创建新的
+            tracing::info!(
+                "[AsterAgent] Session 不存在，创建新 session: {}",
+                session_id
+            );
+            let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let session = SessionManager::create_session(
+                working_dir,
+                "New Chat".to_string(),
+                aster::session::SessionType::User,
+            )
+            .await
+            .map_err(|e| format!("创建 session 失败: {}", e))?;
+
+            tracing::info!("[AsterAgent] 创建新 session: {}", session.id);
+            Ok(session.id)
+        }
+    }
+}
 
 /// Aster Agent 状态信息
 #[derive(Debug, Serialize)]
@@ -21,6 +54,9 @@ pub struct AsterAgentStatus {
     pub provider_configured: bool,
     pub provider_name: Option<String>,
     pub model_name: Option<String>,
+    /// 凭证 UUID（来自凭证池）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_uuid: Option<String>,
 }
 
 /// Provider 配置请求
@@ -32,6 +68,15 @@ pub struct ConfigureProviderRequest {
     pub api_key: Option<String>,
     #[serde(default)]
     pub base_url: Option<String>,
+}
+
+/// 从凭证池配置 Provider 的请求
+#[derive(Debug, Deserialize)]
+pub struct ConfigureFromPoolRequest {
+    /// Provider 类型 (openai, anthropic, kiro, gemini 等)
+    pub provider_type: String,
+    /// 模型名称
+    pub model_name: String,
 }
 
 /// 初始化 Aster Agent
@@ -52,6 +97,7 @@ pub async fn aster_agent_init(
         provider_configured: provider_config.is_some(),
         provider_name: provider_config.as_ref().map(|c| c.provider_name.clone()),
         model_name: provider_config.as_ref().map(|c| c.model_name.clone()),
+        credential_uuid: provider_config.and_then(|c| c.credential_uuid),
     })
 }
 
@@ -73,6 +119,7 @@ pub async fn aster_agent_configure_provider(
         model_name: request.model_name,
         api_key: request.api_key,
         base_url: request.base_url,
+        credential_uuid: None,
     };
 
     state
@@ -84,6 +131,41 @@ pub async fn aster_agent_configure_provider(
         provider_configured: true,
         provider_name: Some(config.provider_name),
         model_name: Some(config.model_name),
+        credential_uuid: None,
+    })
+}
+
+/// 从凭证池配置 Aster Agent 的 Provider
+///
+/// 自动从 ProxyCast 凭证池选择可用凭证并配置 Aster Provider
+#[tauri::command]
+pub async fn aster_agent_configure_from_pool(
+    state: State<'_, AsterAgentState>,
+    db: State<'_, DbConnection>,
+    request: ConfigureFromPoolRequest,
+    session_id: String,
+) -> Result<AsterAgentStatus, String> {
+    tracing::info!(
+        "[AsterAgent] 从凭证池配置 Provider: {} / {}",
+        request.provider_type,
+        request.model_name
+    );
+
+    let aster_config = state
+        .configure_provider_from_pool(
+            &db,
+            &request.provider_type,
+            &request.model_name,
+            &session_id,
+        )
+        .await?;
+
+    Ok(AsterAgentStatus {
+        initialized: true,
+        provider_configured: true,
+        provider_name: Some(aster_config.provider_name),
+        model_name: Some(aster_config.model_name),
+        credential_uuid: Some(aster_config.credential_uuid),
     })
 }
 
@@ -98,6 +180,7 @@ pub async fn aster_agent_status(
         provider_configured: provider_config.is_some(),
         provider_name: provider_config.as_ref().map(|c| c.provider_name.clone()),
         model_name: provider_config.as_ref().map(|c| c.model_name.clone()),
+        credential_uuid: provider_config.and_then(|c| c.credential_uuid),
     })
 }
 
@@ -139,6 +222,10 @@ pub async fn aster_agent_chat_stream(
         state.init_agent().await?;
     }
 
+    // 确保 session 在 Aster 数据库中存在
+    // 如果 session 不存在，自动创建
+    let session_id = ensure_session_exists(&request.session_id).await?;
+
     // 如果提供了 Provider 配置，则配置 Provider
     if let Some(provider_config) = &request.provider_config {
         let config = ProviderConfig {
@@ -146,10 +233,9 @@ pub async fn aster_agent_chat_stream(
             model_name: provider_config.model_name.clone(),
             api_key: provider_config.api_key.clone(),
             base_url: provider_config.base_url.clone(),
+            credential_uuid: None,
         };
-        state
-            .configure_provider(config, &request.session_id)
-            .await?;
+        state.configure_provider(config, &session_id).await?;
     }
 
     // 检查 Provider 是否已配置
@@ -158,13 +244,13 @@ pub async fn aster_agent_chat_stream(
     }
 
     // 创建取消令牌
-    let cancel_token = state.create_cancel_token(&request.session_id).await;
+    let cancel_token = state.create_cancel_token(&session_id).await;
 
     // 创建用户消息
     let user_message = Message::user().with_text(&request.message);
 
     // 创建会话配置
-    let session_config = SessionConfigBuilder::new(&request.session_id).build();
+    let session_config = SessionConfigBuilder::new(&session_id).build();
 
     // 获取 Agent Arc 并保持 guard 在整个流处理期间存活
     let agent_arc = state.get_agent_arc();
@@ -225,7 +311,7 @@ pub async fn aster_agent_chat_stream(
     // guard 会在函数结束时自动释放（stream_result 先释放）
 
     // 清理取消令牌
-    state.remove_cancel_token(&request.session_id).await;
+    state.remove_cancel_token(&session_id).await;
 
     Ok(())
 }

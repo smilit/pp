@@ -114,6 +114,14 @@ export interface ImportResult {
   errors: string[];
 }
 
+export interface ChatTestResult {
+  success: boolean;
+  latency_ms?: number;
+  error?: string;
+  content?: string;
+  raw?: string;
+}
+
 // ============================================================================
 // API 函数
 // ============================================================================
@@ -300,7 +308,23 @@ export const apiKeyProviderApi = {
   ): Promise<ConnectionTestResult> {
     return safeInvoke("test_api_key_provider_connection", {
       providerId,
+      provider_id: providerId,
       modelName,
+      model_name: modelName,
+    });
+  },
+
+  async testChat(
+    providerId: string,
+    modelName: string | undefined,
+    prompt: string,
+  ): Promise<ChatTestResult> {
+    return safeInvoke("test_api_key_provider_chat", {
+      providerId,
+      provider_id: providerId,
+      modelName,
+      model_name: modelName,
+      prompt,
     });
   },
 };

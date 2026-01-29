@@ -54,6 +54,7 @@ const PROVIDER_TYPES: { value: ProviderType; label: string }[] = [
 const PROVIDER_TYPE_EXTRA_FIELDS: Record<ProviderType, string[]> = {
   openai: [],
   "openai-response": [],
+  codex: [],
   anthropic: [],
   "anthropic-compatible": [], // Anthropic 兼容格式，无需额外字段
   gemini: [],

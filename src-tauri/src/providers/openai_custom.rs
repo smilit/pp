@@ -1,9 +1,11 @@
 //! OpenAI Custom Provider (自定义 OpenAI 兼容 API)
 use crate::models::openai::ChatCompletionRequest;
 use reqwest::Client;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::time::Duration;
+use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OpenAICustomConfig {
@@ -100,6 +102,96 @@ impl OpenAICustomProvider {
         }
     }
 
+    fn build_url_fallback_without_v1(&self, endpoint: &str) -> Option<String> {
+        let url = self.build_url(endpoint);
+        if url.contains("/v1/") {
+            Some(url.replacen("/v1/", "/", 1))
+        } else {
+            None
+        }
+    }
+
+    fn build_url_from_base(base_url: &str, endpoint: &str) -> String {
+        let base = base_url.trim_end_matches('/');
+
+        let has_version = base
+            .rsplit('/')
+            .next()
+            .map(|last_segment| {
+                last_segment.starts_with('v')
+                    && last_segment.len() >= 2
+                    && last_segment[1..].chars().all(|c| c.is_ascii_digit())
+            })
+            .unwrap_or(false);
+
+        if has_version {
+            format!("{}/{}", base, endpoint)
+        } else {
+            format!("{}/v1/{}", base, endpoint)
+        }
+    }
+
+    fn base_url_parent(&self) -> Option<String> {
+        let base = self.get_base_url();
+        let base = base.trim();
+
+        let mut url = Url::parse(base)
+            .or_else(|_| Url::parse(&format!("http://{}", base)))
+            .ok()?;
+
+        let path = url.path().trim_end_matches('/');
+        if path.is_empty() || path == "/" {
+            return None;
+        }
+
+        let mut segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        if segments.is_empty() {
+            return None;
+        }
+        segments.pop();
+
+        let new_path = if segments.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/{}", segments.join("/"))
+        };
+
+        url.set_path(&new_path);
+        url.set_query(None);
+        url.set_fragment(None);
+
+        Some(url.to_string().trim_end_matches('/').to_string())
+    }
+
+    fn build_urls_with_fallbacks(&self, endpoint: &str) -> Vec<String> {
+        let mut urls: Vec<String> = Vec::new();
+
+        let primary = self.build_url(endpoint);
+        urls.push(primary.clone());
+
+        if let Some(no_v1) = self.build_url_fallback_without_v1(endpoint) {
+            if no_v1 != primary {
+                urls.push(no_v1);
+            }
+        }
+
+        if let Some(parent_base) = self.base_url_parent() {
+            let u = Self::build_url_from_base(&parent_base, endpoint);
+            if !urls.iter().any(|x| x == &u) {
+                urls.push(u.clone());
+            }
+
+            if u.contains("/v1/") {
+                let u2 = u.replacen("/v1/", "/", 1);
+                if !urls.iter().any(|x| x == &u2) {
+                    urls.push(u2);
+                }
+            }
+        }
+
+        urls
+    }
+
     /// 调用 OpenAI API（使用类型化请求）
     pub async fn call_api(
         &self,
@@ -111,18 +203,32 @@ impl OpenAICustomProvider {
             .as_ref()
             .ok_or("OpenAI API key not configured")?;
 
-        let url = self.build_url("chat/completions");
+        let urls = self.build_urls_with_fallbacks("chat/completions");
+        let mut last_resp: Option<reqwest::Response> = None;
 
-        let resp = self
-            .client
-            .post(&url)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .header("Content-Type", "application/json")
-            .json(request)
-            .send()
-            .await?;
+        eprintln!(
+            "[OPENAI_CUSTOM] call_api testing with model: {}",
+            request.model
+        );
 
-        Ok(resp)
+        for url in &urls {
+            eprintln!("[OPENAI_CUSTOM] call_api trying URL: {}", url);
+            let resp = self
+                .client
+                .post(url)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .header("Content-Type", "application/json")
+                .json(request)
+                .send()
+                .await?;
+
+            if resp.status() != StatusCode::NOT_FOUND {
+                return Ok(resp);
+            }
+            last_resp = Some(resp);
+        }
+
+        Ok(last_resp.ok_or("Request failed")?)
     }
 
     pub async fn chat_completions(
@@ -152,6 +258,22 @@ impl OpenAICustomProvider {
             .send()
             .await?;
 
+        if resp.status() == StatusCode::NOT_FOUND {
+            if let Some(fallback_url) = self.build_url_fallback_without_v1("chat/completions") {
+                if fallback_url != url {
+                    let resp2 = self
+                        .client
+                        .post(&fallback_url)
+                        .header("Authorization", format!("Bearer {api_key}"))
+                        .header("Content-Type", "application/json")
+                        .json(request)
+                        .send()
+                        .await?;
+                    return Ok(resp2);
+                }
+            }
+        }
+
         Ok(resp)
     }
 
@@ -162,22 +284,37 @@ impl OpenAICustomProvider {
             .as_ref()
             .ok_or("OpenAI API key not configured")?;
 
-        let url = self.build_url("models");
+        let urls = self.build_urls_with_fallbacks("models");
+        let mut tried_urls: Vec<String> = Vec::new();
+        let mut resp: Option<reqwest::Response> = None;
 
-        eprintln!("[OPENAI_CUSTOM] list_models URL: {}", url);
+        for url in urls {
+            eprintln!("[OPENAI_CUSTOM] list_models URL: {}", url);
+            tried_urls.push(url.clone());
+            let r = self
+                .client
+                .get(&url)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .send()
+                .await?;
+            if r.status() != StatusCode::NOT_FOUND {
+                resp = Some(r);
+                break;
+            }
+            resp = Some(r);
+        }
 
-        let resp = self
-            .client
-            .get(&url)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .send()
-            .await?;
+        let resp = resp.ok_or("Request failed")?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             eprintln!("[OPENAI_CUSTOM] list_models 失败: {} - {}", status, body);
-            return Err(format!("Failed to list models: {status} - {body}").into());
+            return Err(format!(
+                "Failed to list models: {status} - {body} (tried: {})",
+                tried_urls.join(", ")
+            )
+            .into());
         }
 
         let data: serde_json::Value = resp.json().await?;
@@ -234,6 +371,28 @@ impl StreamingProvider for OpenAICustomProvider {
             .send()
             .await
             .map_err(|e| ProviderError::from_reqwest_error(&e))?;
+
+        let resp = if resp.status() == StatusCode::NOT_FOUND {
+            if let Some(fallback_url) = self.build_url_fallback_without_v1("chat/completions") {
+                if fallback_url != url {
+                    self.client
+                        .post(&fallback_url)
+                        .header("Authorization", format!("Bearer {api_key}"))
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
+                        .json(&stream_request)
+                        .send()
+                        .await
+                        .map_err(|e| ProviderError::from_reqwest_error(&e))?
+                } else {
+                    resp
+                }
+            } else {
+                resp
+            }
+        } else {
+            resp
+        };
 
         // 检查响应状态
         let status = resp.status();

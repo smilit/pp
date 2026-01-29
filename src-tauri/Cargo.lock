@@ -180,7 +180,7 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
 name = "aster"
-version = "0.4.3"
+version = "0.4.5"
 dependencies = [
  "ahash",
  "anyhow",
@@ -4966,7 +4966,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff32365de1b6743cb203b710788263c44a03de03802daf96092f2da4fe6ba4d7"
 dependencies = [
- "proc-macro-crate 3.4.0",
+ "proc-macro-crate 2.0.2",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -6147,7 +6147,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-core"
-version = "0.48.3"
+version = "0.48.4"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -6163,7 +6163,7 @@ dependencies = [
 
 [[package]]
 name = "proxycast-infra"
-version = "0.48.3"
+version = "0.48.4"
 dependencies = [
  "chrono",
  "dashmap 5.5.3",

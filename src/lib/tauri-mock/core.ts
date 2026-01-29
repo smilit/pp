@@ -138,16 +138,27 @@ const defaultMocks: Record<string, any> = {
   agent_chat_stream: () => ({}),
   agent_terminal_command_response: () => ({}),
   agent_term_scrollback_response: () => ({}),
-  native_agent_chat_stream: () => ({}),
 
-  // aster Agent
-  aster_agent_init: () => ({ success: true }),
-  aster_agent_status: () => ({ initialized: false }),
-  aster_agent_reset: () => ({ success: true }),
-  aster_agent_create_session: () => ({ session_id: "mock-aster-session" }),
-  aster_agent_send_message: () => ({ message_id: "mock-message-id" }),
-  aster_agent_extend_system_prompt: () => ({ success: true }),
-  aster_agent_list_providers: () => [],
+  // Aster Agent
+  aster_agent_init: () => ({ initialized: true, provider_configured: false }),
+  aster_agent_status: () => ({
+    initialized: false,
+    provider_configured: false,
+  }),
+  aster_agent_configure_provider: () => ({
+    initialized: true,
+    provider_configured: true,
+  }),
+  aster_agent_configure_from_pool: () => ({
+    initialized: true,
+    provider_configured: true,
+  }),
+  aster_agent_chat_stream: () => ({}),
+  aster_agent_stop: () => true,
+  aster_session_create: () => "mock-aster-session",
+  aster_session_list: () => [],
+  aster_session_get: () => ({ id: "mock", messages: [] }),
+  aster_agent_confirm: () => ({}),
 
   // 终端相关
   create_terminal_session: () => ({ uuid: "mock-terminal-uuid" }),

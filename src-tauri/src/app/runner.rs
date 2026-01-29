@@ -70,7 +70,6 @@ pub fn run() {
         bookmark_manager: bookmark_manager_state,
         enhanced_stats_service: enhanced_stats_service_state,
         batch_operations: batch_operations_state,
-        native_agent: native_agent_state,
         aster_agent: aster_agent_state,
         orchestrator: orchestrator_state,
         connect_state,
@@ -154,7 +153,6 @@ pub fn run() {
         .manage(bookmark_manager_state)
         .manage(enhanced_stats_service_state)
         .manage(batch_operations_state)
-        .manage(native_agent_state)
         .manage(aster_agent_state)
         .manage(orchestrator_state)
         .manage(connect_state)
@@ -814,6 +812,7 @@ pub fn run() {
             commands::api_key_provider_cmd::delete_legacy_api_key_credential,
             // API Key Provider connection test command
             commands::api_key_provider_cmd::test_api_key_provider_connection,
+            commands::api_key_provider_cmd::test_api_key_provider_chat,
             // Route commands
             commands::route_cmd::get_available_routes,
             commands::route_cmd::get_route_curl_examples,
@@ -1052,21 +1051,11 @@ pub fn run() {
             // TODO: 重新启用这些命令，适配 aster-rust 工具系统
             // commands::agent_cmd::agent_terminal_command_response,
             // commands::agent_cmd::agent_term_scrollback_response,
-            // Native Agent commands
-            commands::native_agent_cmd::native_agent_init,
-            commands::native_agent_cmd::native_agent_status,
-            commands::native_agent_cmd::native_agent_reset,
-            commands::native_agent_cmd::native_agent_chat,
-            commands::native_agent_cmd::native_agent_chat_stream,
-            commands::native_agent_cmd::native_agent_create_session,
-            commands::native_agent_cmd::native_agent_get_session,
-            commands::native_agent_cmd::native_agent_delete_session,
-            commands::native_agent_cmd::native_agent_list_sessions,
-            commands::native_agent_cmd::agent_permission_response,
             // Aster Agent commands
             commands::aster_agent_cmd::aster_agent_init,
             commands::aster_agent_cmd::aster_agent_status,
             commands::aster_agent_cmd::aster_agent_configure_provider,
+            commands::aster_agent_cmd::aster_agent_configure_from_pool,
             commands::aster_agent_cmd::aster_agent_chat_stream,
             commands::aster_agent_cmd::aster_agent_stop,
             commands::aster_agent_cmd::aster_session_create,

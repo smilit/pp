@@ -1,35 +1,34 @@
 /**
  * Agent 后端配置
  *
- * 用于切换 Native 和 Aster 后端
+ * 现在只使用 Aster 后端，保留配置接口以便未来扩展
  */
 
-export type AgentBackend = "native" | "aster";
+export type AgentBackend = "aster";
 
-// 默认使用 Native 后端，可以通过 localStorage 切换
+// 默认使用 Aster 后端
 const STORAGE_KEY = "proxycast_agent_backend";
 
 /**
  * 获取当前 Agent 后端
+ * 现在固定返回 aster
  */
 export function getAgentBackend(): AgentBackend {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "aster" || stored === "native") {
-    return stored;
-  }
-  return "native"; // 默认
+  return "aster";
 }
 
 /**
  * 设置 Agent 后端
+ * 保留接口但不再生效
  */
-export function setAgentBackend(backend: AgentBackend): void {
-  localStorage.setItem(STORAGE_KEY, backend);
+export function setAgentBackend(_backend: AgentBackend): void {
+  localStorage.setItem(STORAGE_KEY, "aster");
 }
 
 /**
  * 是否使用 Aster 后端
+ * 现在固定返回 true
  */
 export function useAsterBackend(): boolean {
-  return getAgentBackend() === "aster";
+  return true;
 }

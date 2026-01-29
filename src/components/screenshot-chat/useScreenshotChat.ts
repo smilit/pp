@@ -225,20 +225,24 @@ export function useScreenshotChat(): UseScreenshotChatReturn {
             ? [{ data: imageBase64, mediaType: "image/png" }]
             : [];
 
-        // 发送流式请求
-        await safeInvoke("native_agent_chat_stream", {
-          message,
-          eventName,
-          sessionId,
-          model: "claude-sonnet-4-5",
-          images:
-            images.length > 0
-              ? images.map((img) => ({
-                  data: img.data,
-                  media_type: img.mediaType,
-                }))
-              : undefined,
-          provider: "claude",
+        // 发送流式请求（使用 Aster Agent）
+        await safeInvoke("aster_agent_chat_stream", {
+          request: {
+            message,
+            session_id: sessionId,
+            event_name: eventName,
+            images:
+              images.length > 0
+                ? images.map((img) => ({
+                    data: img.data,
+                    media_type: img.mediaType,
+                  }))
+                : undefined,
+            provider_config: {
+              provider_name: "anthropic",
+              model_name: "claude-sonnet-4-5",
+            },
+          },
         });
       } catch (err) {
         console.error("发送消息失败:", err);

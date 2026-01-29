@@ -86,14 +86,6 @@ export interface CredentialPoolChangeEvent {
   source: ConfigChangeSource;
 }
 
-/** Native Agent 配置变更事件 */
-export interface NativeAgentChangeEvent {
-  default_model: string;
-  temperature: number;
-  max_tokens: number;
-  source: ConfigChangeSource;
-}
-
 /** 配置变更事件联合类型 */
 export type ConfigChangeEvent =
   | { type: "FullReload"; data: FullReloadEvent }
@@ -104,8 +96,7 @@ export type ConfigChangeEvent =
   | { type: "LoggingChanged"; data: LoggingChangeEvent }
   | { type: "RetryChanged"; data: RetryChangeEvent }
   | { type: "AmpConfigChanged"; data: AmpConfigChangeEvent }
-  | { type: "CredentialPoolChanged"; data: CredentialPoolChangeEvent }
-  | { type: "NativeAgentChanged"; data: NativeAgentChangeEvent };
+  | { type: "CredentialPoolChanged"; data: CredentialPoolChangeEvent };
 
 /** 事件回调类型 */
 type ConfigEventCallback = (event: ConfigChangeEvent) => void;

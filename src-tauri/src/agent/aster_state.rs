@@ -2,12 +2,18 @@
 //!
 //! 管理 Aster Agent 实例和相关状态
 //! 提供 Tauri 应用与 Aster 框架的桥接
+//! 支持从 ProxyCast 凭证池自动选择凭证
 
 use aster::agents::{Agent, SessionConfig};
 use aster::model::ModelConfig;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
+
+use crate::agent::credential_bridge::{
+    create_aster_provider, AsterProviderConfig, CredentialBridge, CredentialBridgeError,
+};
+use crate::database::DbConnection;
 
 /// Provider 配置信息
 #[derive(Debug, Clone)]
@@ -20,6 +26,8 @@ pub struct ProviderConfig {
     pub api_key: Option<String>,
     /// Base URL (可选，用于自定义端点)
     pub base_url: Option<String>,
+    /// 凭证 UUID（来自凭证池，用于记录使用和健康状态）
+    pub credential_uuid: Option<String>,
 }
 
 /// Aster Agent 全局状态
@@ -32,6 +40,8 @@ pub struct AsterAgentState {
     cancel_tokens: Arc<RwLock<std::collections::HashMap<String, CancellationToken>>>,
     /// 当前 Provider 配置
     current_provider_config: Arc<RwLock<Option<ProviderConfig>>>,
+    /// 凭证桥接器
+    credential_bridge: CredentialBridge,
 }
 
 impl Default for AsterAgentState {
@@ -47,6 +57,7 @@ impl AsterAgentState {
             agent: Arc::new(RwLock::new(None)),
             cancel_tokens: Arc::new(RwLock::new(std::collections::HashMap::new())),
             current_provider_config: Arc::new(RwLock::new(None)),
+            credential_bridge: CredentialBridge::new(),
         }
     }
 
@@ -106,6 +117,101 @@ impl AsterAgentState {
         );
 
         Ok(())
+    }
+
+    /// 从凭证池配置 Provider
+    ///
+    /// 自动从 ProxyCast 凭证池选择可用凭证并配置 Aster Provider
+    ///
+    /// # 参数
+    /// - `db`: 数据库连接
+    /// - `provider_type`: Provider 类型 (openai, anthropic, kiro 等)
+    /// - `model`: 模型名称
+    /// - `session_id`: 会话 ID
+    pub async fn configure_provider_from_pool(
+        &self,
+        db: &DbConnection,
+        provider_type: &str,
+        model: &str,
+        session_id: &str,
+    ) -> Result<AsterProviderConfig, String> {
+        // 确保 Agent 已初始化
+        self.init_agent().await?;
+
+        // 从凭证池选择凭证并获取配置
+        let aster_config = self
+            .credential_bridge
+            .select_and_configure(db, provider_type, model)
+            .await
+            .map_err(|e| format!("从凭证池选择凭证失败: {}", e))?;
+
+        // 创建 Provider
+        let provider = create_aster_provider(&aster_config)
+            .await
+            .map_err(|e| format!("创建 Provider 失败: {}", e))?;
+
+        // 更新 Agent 的 Provider
+        let agent_guard = self.agent.read().await;
+        if let Some(agent) = agent_guard.as_ref() {
+            agent
+                .update_provider(provider, session_id)
+                .await
+                .map_err(|e| format!("更新 Provider 失败: {}", e))?;
+        }
+
+        // 保存当前配置
+        let config = ProviderConfig {
+            provider_name: aster_config.provider_name.clone(),
+            model_name: aster_config.model_name.clone(),
+            api_key: aster_config.api_key.clone(),
+            base_url: aster_config.base_url.clone(),
+            credential_uuid: Some(aster_config.credential_uuid.clone()),
+        };
+        let mut config_guard = self.current_provider_config.write().await;
+        *config_guard = Some(config);
+
+        // 记录凭证使用
+        if let Err(e) = self
+            .credential_bridge
+            .record_usage(db, &aster_config.credential_uuid)
+        {
+            tracing::warn!("[AsterAgent] 记录凭证使用失败: {}", e);
+        }
+
+        tracing::info!(
+            "[AsterAgent] 从凭证池配置 Provider 成功: {} / {} (凭证: {})",
+            aster_config.provider_name,
+            aster_config.model_name,
+            aster_config.credential_uuid
+        );
+
+        Ok(aster_config)
+    }
+
+    /// 标记当前凭证为健康
+    pub fn mark_current_healthy(&self, db: &DbConnection, model: Option<&str>) {
+        if let Ok(config_guard) = self.current_provider_config.try_read() {
+            if let Some(config) = config_guard.as_ref() {
+                if let Some(uuid) = &config.credential_uuid {
+                    if let Err(e) = self.credential_bridge.mark_healthy(db, uuid, model) {
+                        tracing::warn!("[AsterAgent] 标记凭证健康失败: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    /// 标记当前凭证为不健康
+    pub fn mark_current_unhealthy(&self, db: &DbConnection, error: Option<&str>) {
+        if let Ok(config_guard) = self.current_provider_config.try_read() {
+            if let Some(config) = config_guard.as_ref() {
+                if let Some(uuid) = &config.credential_uuid {
+                    if let Err(e) = self.credential_bridge.mark_unhealthy(db, uuid, error) {
+                        tracing::warn!("[AsterAgent] 标记凭证不健康失败: {}", e);
+                    }
+                }
+            }
+        }
     }
 
     /// 设置 Provider 相关的环境变量

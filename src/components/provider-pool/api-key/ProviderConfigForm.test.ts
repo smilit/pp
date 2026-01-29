@@ -50,6 +50,7 @@ const providerTypeArbitrary: fc.Arbitrary<ProviderType> = fc.constantFrom(
 const EXPECTED_EXTRA_FIELDS: Record<ProviderType, string[]> = {
   openai: [],
   "openai-response": [],
+  codex: [],
   anthropic: [],
   "anthropic-compatible": [],
   gemini: [],
